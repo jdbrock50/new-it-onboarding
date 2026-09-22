@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables / secrets
+.env
+*.env
+!.env.example
+
+# Google/API credentials
+credentials.json
+service_account.json
+client_secret*.json
+token.json
+*.pem
+*.key
+
+# IDE
+.vscode/
+.idea/
+
+# Windows / macOS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Generated output
+logs/*
+output/*
+
+# Preserve empty directories
+!logs/.gitkeep
+!output/.gitkeep
+
+# Temporary files
+*.tmp
+*.temp
+~*
