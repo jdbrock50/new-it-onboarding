@@ -24,6 +24,7 @@ CATEGORY_ORDER = [
 def create_checklist(
     employee: Employee,
     tasks: list[OnboardingTask],
+    shore_email: str | None = None,
 ) -> Path:
     """Create a text onboarding checklist for an employee."""
 
@@ -35,6 +36,11 @@ def create_checklist(
     )
 
     output_path = OUTPUT_DIR / filename
+
+    resolved_email = (
+        shore_email
+        or employee.proposed_shore_email
+    )
 
     lines = [
         "SHORE EDUCATIONAL COLLABORATIVE",
@@ -48,7 +54,7 @@ def create_checklist(
         f"Supervisor: {employee.supervisor}",
         f"Start Date: {employee.start_date}",
         f"Personal Email: {employee.personal_email}",
-        f"Proposed Shore Email: {employee.proposed_shore_email}",
+        f"Shore Email: {resolved_email}",
         f"Device Needs: {', '.join(employee.device_needs) or 'None'}",
         "",
     ]

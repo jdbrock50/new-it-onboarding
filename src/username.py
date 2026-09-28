@@ -65,3 +65,50 @@ def generate_middle_initial_username(
         f"{normalized_middle[0]}"
         f"{normalized_last}"
     )
+
+def resolve_username(
+    first_name: str,
+    last_name: str,
+    existing_usernames: set[str],
+    middle_name: str = "",
+) -> str:
+    """Return the first available Shore username.
+
+    Username selection order:
+    1. First initial + last name
+    2. First initial + middle initial + last name, when available
+    3. First initial + last name + numeric suffix
+    """
+
+    existing = {
+        username.lower()
+        for username in existing_usernames
+    }
+
+    base_username = generate_base_username(
+        first_name,
+        last_name,
+    )
+
+    if base_username not in existing:
+        return base_username
+
+    if middle_name:
+        middle_username = generate_middle_initial_username(
+            first_name,
+            middle_name,
+            last_name,
+        )
+
+        if middle_username not in existing:
+            return middle_username
+
+    suffix = 1
+
+    while True:
+        numbered_username = f"{base_username}{suffix}"
+
+        if numbered_username not in existing:
+            return numbered_username
+
+        suffix += 1
