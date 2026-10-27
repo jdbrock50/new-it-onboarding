@@ -1,13 +1,24 @@
+
+"""Tests for Google Workspace integration in the onboarding console."""
+
 """Tests for Google Workspace integration in the onboarding console."""
 
 from datetime import date
 from unittest.mock import patch
 
+import pytest
 from googleapiclient.errors import HttpError
 from httplib2 import Response
 
 from src.console import create_new_onboarding, resolve_employee_email
 from src.employee import Employee
+
+
+@pytest.fixture(autouse=True)
+def mock_group_directory():
+    """Avoid real Groups API calls in console tests."""
+    with patch("src.console.get_workspace_group_usernames", return_value=set()):
+        yield
 
 
 def make_employee(middle_name: str = "") -> Employee:
@@ -156,3 +167,42 @@ def test_create_onboarding_uses_resolved_email_everywhere(capsys):
     assert "Create jmercado@shorecollaborative.org Google Workspace account" not in descriptions
     assert "Provide jmercado@shorecollaborative.org" not in descriptions
     assert f"Shore Email: {resolved_email}" in capsys.readouterr().out
+
+
+def test_group_collision_uses_numeric_suffix():
+    """A group address must reserve the same username as a user."""
+    employee = make_employee()
+    with (
+        patch("src.console.get_existing_usernames", return_value=set()),
+        patch("src.console.get_workspace_usernames", return_value=set()),
+        patch("src.console.get_workspace_group_usernames", return_value={"jmercado"}),
+    ):
+        username, email = resolve_employee_email(employee)
+    assert username == "jmercado1"
+    assert email == "jmercado1@shorecollaborative.org"
+
+
+def test_group_lookup_failure_warns_and_preserves_user_collisions(capsys):
+    """A failed group check must never claim full verification."""
+    employee = make_employee()
+    with (
+        patch("src.console.get_existing_usernames", return_value=set()),
+        patch("src.console.get_workspace_usernames", return_value={"jmercado"}),
+        patch("src.console.get_workspace_group_usernames", side_effect=OSError("offline")),
+    ):
+        username, _ = resolve_employee_email(employee)
+    assert username == "jmercado1"
+    assert "Username availability is NOT verified." in capsys.readouterr().out
+
+
+def test_user_lookup_failure_preserves_group_collisions(capsys):
+    """A failed user check still respects successfully loaded groups."""
+    employee = make_employee()
+    with (
+        patch("src.console.get_existing_usernames", return_value=set()),
+        patch("src.console.get_workspace_usernames", side_effect=OSError("offline")),
+        patch("src.console.get_workspace_group_usernames", return_value={"jmercado"}),
+    ):
+        username, _ = resolve_employee_email(employee)
+    assert username == "jmercado1"
+    assert "Username availability is NOT verified." in capsys.readouterr().out

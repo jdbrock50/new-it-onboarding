@@ -7,7 +7,10 @@ from googleapiclient.errors import HttpError
 from src.checklist import create_checklist
 from src.config import GOOGLE_DOMAIN
 from src.employee import Employee
-from src.google_workspace import get_workspace_usernames
+from src.google_workspace import (
+    get_workspace_group_usernames,
+    get_workspace_usernames,
+)
 from src.history import (
     VALID_STATUSES,
     get_existing_usernames,
@@ -170,18 +173,28 @@ def resolve_employee_email(
     print()
     print("Checking Shore Google Workspace directory...")
 
-    try:
-        workspace_usernames = get_workspace_usernames()
-    except (HttpError, OSError, ValueError) as exc:
-        print()
-        print("WARNING: Google Workspace verification failed.")
-        print(f"Error type: {type(exc).__name__}")
-        print("Only locally reserved usernames were checked.")
-        print("Username availability is NOT verified.")
-    else:
-        existing_usernames.update(workspace_usernames)
+    verification_complete = True
+    for label, lookup in (
+        ("Users", get_workspace_usernames),
+        ("Groups", get_workspace_group_usernames),
+    ):
+        try:
+            reserved = lookup()
+        except (HttpError, OSError, ValueError) as exc:
+            verification_complete = False
+            print(f"WARNING: Google Workspace {label} lookup failed.")
+            print(f"Error type: {type(exc).__name__}")
+        else:
+            existing_usernames.update(reserved)
+            print(f"{label} directory addresses checked: {len(reserved)}")
+
+    if verification_complete:
         print("Google Workspace directory check successful.")
-        print(f"Directory addresses checked: {len(workspace_usernames)}")
+        print(f"Directory addresses checked: {len(existing_usernames)}")
+    else:
+        print("WARNING: Google Workspace verification failed.")
+        print("Only successful lookups and local reservations were checked.")
+        print("Username availability is NOT verified.")
 
     username = resolve_username(
         first_name=employee.first_name,

@@ -1,5 +1,4 @@
-
-"""Read-only access to Shore's Google Workspace user directory."""
+"""Read-only access to Shore's Google Workspace user and group directories."""
 
 from pathlib import Path
 
@@ -12,6 +11,7 @@ DELEGATED_ADMIN = "jmercado@shorecollaborative.org"
 
 SCOPES = (
     "https://www.googleapis.com/auth/admin.directory.user.readonly",
+    "https://www.googleapis.com/auth/admin.directory.group.readonly",
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -42,8 +42,22 @@ def create_directory_service():
     )
 
 
+def _add_domain_addresses(
+    usernames: set[str], addresses: list[str],
+) -> None:
+    """Add local parts of addresses belonging to Shore's domain."""
+    suffix = f"@{GOOGLE_DOMAIN}"
+
+    for address in addresses:
+        normalized_address = address.strip().lower()
+        if normalized_address.endswith(suffix):
+            username = normalized_address[: -len(suffix)]
+            if username:
+                usernames.add(username)
+
+
 def get_workspace_usernames() -> set[str]:
-    """Retrieve usernames and aliases across all directory pages.
+    """Retrieve user addresses and aliases across all directory pages.
 
     Raises an exception if any request fails, preventing callers from
     treating an incomplete lookup as proof of username availability.
@@ -51,7 +65,6 @@ def get_workspace_usernames() -> set[str]:
     service = create_directory_service()
     usernames: set[str] = set()
     page_token = None
-    suffix = f"@{GOOGLE_DOMAIN}"
 
     while True:
         response = (
@@ -71,14 +84,44 @@ def get_workspace_usernames() -> set[str]:
                 *(user.get("aliases") or []),
                 *(user.get("nonEditableAliases") or []),
             ]
+            _add_domain_addresses(usernames, addresses)
 
-            for address in addresses:
-                normalized_address = address.strip().lower()
+        page_token = response.get("nextPageToken")
+        if not page_token:
+            break
 
-                if normalized_address.endswith(suffix):
-                    username = normalized_address[: -len(suffix)]
-                    if username:
-                        usernames.add(username)
+    return usernames
+
+
+def get_workspace_group_usernames() -> set[str]:
+    """Retrieve Google Group addresses and aliases across all pages.
+
+    Raises an exception on any failed request so incomplete results are
+    never mistaken for a successful collision check.
+    """
+    service = create_directory_service()
+    usernames: set[str] = set()
+    page_token = None
+
+    while True:
+        response = (
+            service.groups()
+            .list(
+                domain=GOOGLE_DOMAIN,
+                maxResults=200,
+                pageToken=page_token,
+                fields="nextPageToken,groups(email,aliases,nonEditableAliases)",
+            )
+            .execute()
+        )
+
+        for group in response.get("groups", []):
+            addresses = [
+                group.get("email", ""),
+                *(group.get("aliases") or []),
+                *(group.get("nonEditableAliases") or []),
+            ]
+            _add_domain_addresses(usernames, addresses)
 
         page_token = response.get("nextPageToken")
         if not page_token:
@@ -88,15 +131,18 @@ def get_workspace_usernames() -> set[str]:
 
 
 def test_google_workspace_connection() -> bool:
-    """Test directory access without displaying account information."""
+    """Test user and group directory access without displaying addresses."""
     try:
         usernames = get_workspace_usernames()
+        group_usernames = get_workspace_group_usernames()
 
         print("Google Workspace connection successful.")
         print("Directory API access: READ ONLY")
         print(f"Domain: {GOOGLE_DOMAIN}")
         print(f"Delegated account: {DELEGATED_ADMIN}")
         print(f"Reserved user addresses found: {len(usernames)}")
+        print(f"Reserved group addresses found: {len(group_usernames)}")
+        print(f"Unique reserved addresses: {len(usernames | group_usernames)}")
         return True
 
     except FileNotFoundError:
