@@ -1,3 +1,4 @@
+
 """IT onboarding checklist generation."""
 
 from dataclasses import dataclass
@@ -65,22 +66,33 @@ def _create_device_tasks(device: str) -> list[OnboardingTask]:
     return tasks
 
 
-def generate_onboarding_tasks(employee: Employee) -> list[OnboardingTask]:
-    """Generate IT onboarding tasks for an employee."""
+def generate_onboarding_tasks(
+    employee: Employee,
+    shore_email: str | None = None,
+) -> list[OnboardingTask]:
+    """Generate IT onboarding tasks using the resolved Shore email."""
+
+    resolved_email = (
+        shore_email
+        if shore_email is not None
+        else employee.proposed_shore_email
+    )
+
+    resolved_username = resolved_email.split("@", maxsplit=1)[0]
 
     tasks = [
         OnboardingTask(
             category="Accounts & Access",
             description=(
-                f"Verify proposed Shore username "
-                f"({employee.proposed_username}) is available"
+                "Verify proposed Shore username "
+                f"({resolved_username}) is available"
             ),
         ),
         OnboardingTask(
             category="Accounts & Access",
             description=(
-                f"Create {employee.proposed_shore_email} "
-                f"Google Workspace account"
+                f"Create {resolved_email} "
+                "Google Workspace account"
             ),
         ),
         OnboardingTask(
@@ -160,7 +172,7 @@ def generate_onboarding_tasks(employee: Employee) -> list[OnboardingTask]:
         [
             OnboardingTask(
                 category="Employee Handoff",
-                description=f"Provide {employee.proposed_shore_email}",
+                description=f"Provide {resolved_email}",
             ),
             OnboardingTask(
                 category="Employee Handoff",

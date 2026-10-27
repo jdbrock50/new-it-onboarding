@@ -2,9 +2,12 @@
 
 from datetime import date
 
+from googleapiclient.errors import HttpError
+
 from src.checklist import create_checklist
 from src.config import GOOGLE_DOMAIN
 from src.employee import Employee
+from src.google_workspace import get_workspace_usernames
 from src.history import (
     VALID_STATUSES,
     get_existing_usernames,
@@ -37,7 +40,6 @@ STATUS_OPTIONS = {
 
 def display_header() -> None:
     """Display the application header."""
-
     print()
     print("=" * 60)
     print("SHORE EDUCATIONAL COLLABORATIVE")
@@ -47,7 +49,6 @@ def display_header() -> None:
 
 def display_menu() -> None:
     """Display the main application menu."""
-
     print()
     print("1. Create New Onboarding")
     print("2. View Pending Onboardings")
@@ -60,22 +61,17 @@ def display_menu() -> None:
 
 def get_required_input(prompt: str) -> str:
     """Prompt until the user enters a non-empty value."""
-
     while True:
         value = input(prompt).strip()
-
         if value:
             return value
-
         print("This field is required. Please try again.")
 
 
 def get_start_date() -> date:
     """Prompt for and validate an employee start date."""
-
     while True:
         value = input("Start date (YYYY-MM-DD): ").strip()
-
         try:
             return date.fromisoformat(value)
         except ValueError:
@@ -84,7 +80,6 @@ def get_start_date() -> date:
 
 def get_device_needs() -> list[str]:
     """Display the device menu and return selected devices."""
-
     while True:
         print()
         print("Device Needs")
@@ -101,7 +96,6 @@ def get_device_needs() -> list[str]:
         print("Example: 2,6")
 
         selection = input("Selection: ").strip()
-
         if not selection:
             print("Please make a selection.")
             continue
@@ -127,10 +121,8 @@ def get_device_needs() -> list[str]:
             return []
 
         devices = []
-
         for choice in choices:
             device = DEVICE_OPTIONS[choice]
-
             if device not in devices:
                 devices.append(device)
 
@@ -139,7 +131,6 @@ def get_device_needs() -> list[str]:
 
 def collect_employee_information() -> Employee:
     """Collect new employee information."""
-
     print()
     print("CREATE NEW ONBOARDING")
     print("=" * 60)
@@ -173,9 +164,24 @@ def collect_employee_information() -> Employee:
 def resolve_employee_email(
     employee: Employee,
 ) -> tuple[str, str]:
-    """Resolve an available Shore username and email."""
-
+    """Resolve a username using local and live directory records."""
     existing_usernames = get_existing_usernames()
+
+    print()
+    print("Checking Shore Google Workspace directory...")
+
+    try:
+        workspace_usernames = get_workspace_usernames()
+    except (HttpError, OSError, ValueError) as exc:
+        print()
+        print("WARNING: Google Workspace verification failed.")
+        print(f"Error type: {type(exc).__name__}")
+        print("Only locally reserved usernames were checked.")
+        print("Username availability is NOT verified.")
+    else:
+        existing_usernames.update(workspace_usernames)
+        print("Google Workspace directory check successful.")
+        print(f"Directory addresses checked: {len(workspace_usernames)}")
 
     username = resolve_username(
         first_name=employee.first_name,
@@ -184,19 +190,13 @@ def resolve_employee_email(
         existing_usernames=existing_usernames,
     )
 
-    shore_email = f"{username}@{GOOGLE_DOMAIN}"
-
-    return username, shore_email
+    return username, f"{username}@{GOOGLE_DOMAIN}"
 
 
 def create_new_onboarding() -> None:
     """Create a new employee onboarding."""
-
     employee = collect_employee_information()
-
-    username, shore_email = resolve_employee_email(
-        employee,
-    )
+    username, shore_email = resolve_employee_email(employee)
 
     base_username = employee.proposed_username
     collision_detected = username != base_username
@@ -225,7 +225,6 @@ def create_new_onboarding() -> None:
         print("Devices: None")
 
     print()
-
     confirmation = input(
         "Create this onboarding? (Y/N): "
     ).strip().lower()
@@ -235,7 +234,10 @@ def create_new_onboarding() -> None:
         print("Onboarding cancelled.")
         return
 
-    tasks = generate_onboarding_tasks(employee)
+    tasks = generate_onboarding_tasks(
+        employee,
+        shore_email=shore_email,
+    )
 
     checklist_path = create_checklist(
         employee,
@@ -255,39 +257,26 @@ def create_new_onboarding() -> None:
     print(f"History: {history_path}")
 
 
-def get_record_full_name(
-    record: dict[str, str],
-) -> str:
+def get_record_full_name(record: dict[str, str]) -> str:
     """Return the full name stored in a history record."""
-
     name_parts = [
         record.get("first_name", "").strip(),
         record.get("middle_name", "").strip(),
         record.get("last_name", "").strip(),
     ]
-
-    return " ".join(
-        part
-        for part in name_parts
-        if part
-    )
+    return " ".join(part for part in name_parts if part)
 
 
-def display_records(
-    records: list[dict[str, str]],
-) -> None:
+def display_records(records: list[dict[str, str]]) -> None:
     """Display onboarding records in a readable format."""
-
     if not records:
         print()
         print("No onboarding records found.")
         return
 
     print()
-
     for number, record in enumerate(records, start=1):
         full_name = get_record_full_name(record)
-
         print(f"{number}. {full_name}")
         print(f"   Position: {record.get('position', '')}")
         print(f"   Program: {record.get('program', '')}")
@@ -301,45 +290,32 @@ def display_records(
 
 def view_pending_onboardings() -> None:
     """Display unfinished onboarding records."""
-
     print()
     print("PENDING ONBOARDINGS")
     print("=" * 60)
-
-    records = get_pending_onboardings()
-
-    display_records(records)
+    display_records(get_pending_onboardings())
 
 
 def view_upcoming_hires() -> None:
     """Display upcoming employee start dates."""
-
     print()
     print("UPCOMING HIRES")
     print("=" * 60)
-
-    records = get_upcoming_hires()
-
-    display_records(records)
+    display_records(get_upcoming_hires())
 
 
 def view_onboarding_history() -> None:
     """Display all onboarding history."""
-
     print()
     print("ONBOARDING HISTORY")
     print("=" * 60)
-
-    records = load_onboarding_history()
-
-    display_records(records)
+    display_records(load_onboarding_history())
 
 
 def select_history_record(
     records: list[dict[str, str]],
 ) -> int | None:
     """Prompt the user to select an onboarding record."""
-
     while True:
         selection = input(
             "Select employee number or C to cancel: "
@@ -363,7 +339,6 @@ def select_history_record(
 
 def select_new_status() -> str | None:
     """Prompt the user to select a new status."""
-
     print()
     print("1. Pending")
     print("2. In Progress")
@@ -379,7 +354,6 @@ def select_new_status() -> str | None:
             return None
 
         status = STATUS_OPTIONS.get(selection)
-
         if status in VALID_STATUSES:
             return status
 
@@ -388,20 +362,17 @@ def select_new_status() -> str | None:
 
 def update_status() -> None:
     """Allow the user to update an onboarding status."""
-
     print()
     print("UPDATE ONBOARDING STATUS")
     print("=" * 60)
 
     records = load_onboarding_history()
-
     if not records:
         print()
         print("No onboarding records found.")
         return
 
     display_records(records)
-
     record_number = select_history_record(records)
 
     if record_number is None:
@@ -421,14 +392,12 @@ def update_status() -> None:
     )
 
     new_status = select_new_status()
-
     if new_status is None:
         print()
         print("Status update cancelled.")
         return
 
     print()
-
     confirmation = input(
         f"Change status to '{new_status}'? (Y/N): "
     ).strip().lower()
@@ -452,7 +421,6 @@ def update_status() -> None:
 
 def run_console() -> None:
     """Run the Shore IT Onboarding console."""
-
     while True:
         display_header()
         display_menu()

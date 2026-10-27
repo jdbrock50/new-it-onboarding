@@ -5,6 +5,9 @@ __pycache__/
 *.pyd
 .pytest_cache/
 .coverage
+.coverage.*
+htmlcov/
+.ruff_cache/
 
 # Virtual environments
 .venv/
@@ -13,16 +16,24 @@ env/
 
 # Environment variables / secrets
 .env
-*.env
+.env.*
 !.env.example
+*.env
+!*.env.example
 
-# Google/API credentials
+# Google Workspace / API credentials
+credentials/
+**/credentials/
 credentials.json
 service_account.json
+service-account.json
 client_secret*.json
 token.json
+*service-account*.json
+*service_account*.json
 *.pem
 *.key
+*.p12
 
 # IDE
 .vscode/
@@ -40,6 +51,16 @@ output/*
 # Preserve empty directories
 !logs/.gitkeep
 !output/.gitkeep
+
+# Employee onboarding data (contains personal information)
+data/*.csv
+data/*.json
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+
+# Preserve empty data directory
+!data/.gitkeep
 
 # Temporary files
 *.tmp

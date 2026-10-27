@@ -1,4 +1,0 @@
-created_at,updated_at,first_name,middle_name,last_name,position,program,location,supervisor,start_date,personal_email,shore_email,devices,status
-2026-09-24T14:50:42+00:00,2026-09-28T13:52:51+00:00,Maria,L,Gonzalez,Teacher,Sail Middle School,Cambridge,Jane Doe,2026-10-05,maria@noreply.org,mgonzalez@shorecollaborative.org,"Windows, Android",Completed
-2026-09-28T13:34:41+00:00,2026-09-28T13:43:04+00:00,Maria,,Gonzalez,Teacher,Shore Middle,CFS,Jane Doe,2026-10-05,maria@gmail.com,mgonzalez@shorecollaborative.org,"Windows, Android",In Progress
-2026-09-28T14:07:15+00:00,2026-09-28T14:07:15+00:00,Maria,Elena,Gonzalez,Teacher,Shore Middle,CFS,Jane Doe,2026-10-05,maria@gmail.com,megonzalez@shorecollaborative.org,"Windows, Android",Pending
