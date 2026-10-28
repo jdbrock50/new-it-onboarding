@@ -26,6 +26,7 @@ from src.history import (
     update_onboarding_status,
 )
 from src.onboarding import generate_onboarding_tasks
+from src.progress_dashboard import build_progress_dashboard
 from src.task_progress import (
     apply_task_progress,
     calculate_task_progress,
@@ -73,7 +74,8 @@ def display_menu() -> None:
     print("8. Export Audit Events to CSV")
     print("9. Export Audit Summary to CSV")
     print("10. Manage Onboarding Checklist")
-    print("11. Exit")
+    print("11. View Onboarding Progress Dashboard")
+    print("12. Exit")
     print()
 
 
@@ -871,6 +873,47 @@ def manage_onboarding_checklist() -> None:
             print(f"Updated checklist: {path}")
 
 
+def view_onboarding_progress_dashboard() -> None:
+    """Display read-only task completion and onboarding status totals."""
+    print()
+    print("ONBOARDING PROGRESS DASHBOARD")
+    print("=" * 60)
+    try:
+        records = load_onboarding_history()
+        report = build_progress_dashboard(records)
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"Unable to build progress dashboard ({type(exc).__name__}).")
+        return
+
+    if not report["rows"]:
+        print("No onboarding records found.")
+        return
+
+    for number, row in enumerate(report["rows"], start=1):
+        print()
+        print(f"{number}. {row['employee']}")
+        print(f"   Shore Email: {row['shore_email'] or 'Not assigned'}")
+        print(f"   Overall Status: {row['status']}")
+        if row["error"]:
+            print(f"   Progress unavailable: {row['error']}")
+        else:
+            print(
+                f"   Checklist Progress: {row['completed']}/{row['total']} "
+                f"({row['percentage']}%)"
+            )
+
+    print()
+    print("DASHBOARD SUMMARY")
+    print("-" * 60)
+    print(f"Total onboardings: {report['total_onboardings']}")
+    print(f"Completed checklists: {report['completed_checklists']}")
+    print(f"Incomplete checklists: {report['incomplete_checklists']}")
+    print(f"Records with errors: {report['errors']}")
+    print("Overall onboarding statuses:")
+    for status, count in sorted(report["status_counts"].items()):
+        print(f"   {status}: {count}")
+
+
 def run_console() -> None:
     """Run the Shore IT Onboarding console."""
     while True:
@@ -900,14 +943,16 @@ def run_console() -> None:
         elif selection == "10":
             manage_onboarding_checklist()
         elif selection == "11":
+            view_onboarding_progress_dashboard()
+        elif selection == "12":
             print()
             print("Exiting Shore IT Onboarding.")
             print()
             break
         else:
             print()
-            print("Invalid selection. Please choose 1 through 11.")
+            print("Invalid selection. Please choose 1 through 12.")
 
-        if selection in {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}:
+        if selection in {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"}:
             print()
             input("Press Enter to return to the main menu...")
