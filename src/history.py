@@ -3,6 +3,7 @@
 import csv
 from datetime import UTC, date, datetime
 from pathlib import Path
+from uuid import uuid4
 
 from src.config import GOOGLE_DOMAIN
 from src.employee import Employee
@@ -25,6 +26,7 @@ FIELDNAMES = [
     "shore_email",
     "devices",
     "status",
+    "onboarding_id",
 ]
 
 VALID_STATUSES = {
@@ -67,6 +69,7 @@ def save_onboarding_record(
         "shore_email": shore_email or employee.proposed_shore_email,
         "devices": ", ".join(employee.device_needs),
         "status": "Pending",
+        "onboarding_id": str(uuid4()),
     }
 
     if file_exists:
@@ -135,7 +138,7 @@ def write_onboarding_history(
 
 
 def ensure_current_schema() -> None:
-    """Upgrade an existing history file to the current schema."""
+    """Upgrade existing history records with stable onboarding IDs."""
 
     if not HISTORY_FILE.exists():
         return
@@ -149,17 +152,24 @@ def ensure_current_schema() -> None:
         reader = csv.DictReader(file)
         existing_fields = reader.fieldnames or []
 
-    if existing_fields == FIELDNAMES:
-        return
+    needs_rewrite = existing_fields != FIELDNAMES
+    existing_ids: set[str] = set()
 
     for record in records:
         if not record.get("updated_at"):
-            record["updated_at"] = record.get(
-                "created_at",
-                "",
-            )
+            record["updated_at"] = record.get("created_at", "")
+            needs_rewrite = True
 
-    write_onboarding_history(records)
+        onboarding_id = (record.get("onboarding_id") or "").strip()
+        if not onboarding_id or onboarding_id in existing_ids:
+            onboarding_id = str(uuid4())
+            record["onboarding_id"] = onboarding_id
+            needs_rewrite = True
+
+        existing_ids.add(onboarding_id)
+
+    if needs_rewrite:
+        write_onboarding_history(records)
 
 
 def get_existing_usernames() -> set[str]:

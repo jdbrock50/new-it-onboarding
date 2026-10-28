@@ -26,6 +26,11 @@ from src.history import (
     update_onboarding_status,
 )
 from src.onboarding import generate_onboarding_tasks
+from src.task_progress import (
+    apply_task_progress,
+    calculate_task_progress,
+    set_task_completed,
+)
 from src.username import resolve_username
 
 DEVICE_OPTIONS = {
@@ -67,7 +72,8 @@ def display_menu() -> None:
     print("7. View Audit Summary")
     print("8. Export Audit Events to CSV")
     print("9. Export Audit Summary to CSV")
-    print("10. Exit")
+    print("10. Manage Onboarding Checklist")
+    print("11. Exit")
     print()
 
 
@@ -747,6 +753,124 @@ def update_status() -> None:
     print(f"Updated: {updated_record['updated_at']}")
 
 
+def employee_from_history(record: dict[str, str]) -> Employee:
+    """Reconstruct an employee from an existing history row."""
+    devices = [item.strip() for item in record.get("devices", "").split(",")]
+    return Employee(
+        first_name=record["first_name"],
+        middle_name=record.get("middle_name", ""),
+        last_name=record["last_name"],
+        job_title=record["position"],
+        program=record["program"],
+        location=record["location"],
+        supervisor=record["supervisor"],
+        start_date=date.fromisoformat(record["start_date"]),
+        personal_email=record["personal_email"],
+        device_needs=[item for item in devices if item and item.lower() != "none"],
+    )
+
+
+def manage_onboarding_checklist() -> None:
+    """Manage saved task states without changing overall onboarding status."""
+    print()
+    print("MANAGE ONBOARDING CHECKLIST")
+    print("=" * 60)
+    try:
+        records = load_onboarding_history()
+    except (OSError, ValueError) as exc:
+        print(f"Unable to read onboarding history ({type(exc).__name__}).")
+        return
+    if not records:
+        print("No onboarding records found.")
+        return
+
+    display_records(records)
+    number = select_history_record(records)
+    if number is None:
+        print("Checklist management cancelled.")
+        return
+
+    record = records[number - 1]
+    onboarding_id = record.get("onboarding_id", "").strip()
+    if not onboarding_id:
+        print("This record has no onboarding ID. No changes were made.")
+        return
+    try:
+        employee = employee_from_history(record)
+        tasks = generate_onboarding_tasks(
+            employee, shore_email=record.get("shore_email", "")
+        )
+        apply_task_progress(onboarding_id, tasks)
+    except (KeyError, ValueError, TypeError, OSError) as exc:
+        print(f"Unable to load checklist ({type(exc).__name__}).")
+        return
+
+    while True:
+        progress = calculate_task_progress(tasks)
+        print()
+        print(f"Employee: {get_record_full_name(record)}")
+        print(f"Progress: {progress['completed']}/{progress['total']} "
+              f"({progress['percentage']}%)")
+        print("Overall onboarding status: " + record.get("status", ""))
+        print("-" * 60)
+        for index, task in enumerate(tasks, start=1):
+            mark = "X" if task.completed else " "
+            print(f"{index}. [{mark}] {task.category}: {task.description}")
+        print()
+        choice = input("Task number to toggle, or C to return: ").strip()
+        if choice.lower() == "c":
+            return
+        try:
+            index = int(choice)
+        except ValueError:
+            print("Please enter a valid task number.")
+            continue
+        if index < 1 or index > len(tasks):
+            print("Task number is out of range.")
+            continue
+
+        task = tasks[index - 1]
+        new_state = not task.completed
+        label = "complete" if new_state else "pending"
+        confirmation = input(
+            f"Mark '{task.description}' as {label}? (Y/N): "
+        ).strip().lower()
+        if confirmation not in {"y", "yes"}:
+            print("No changes made.")
+            continue
+
+        # Authorization audit is written before changing persisted task state.
+        if not _record_required_audit_event(
+            "task_progress_change_authorized",
+            shore_email=record.get("shore_email", ""),
+            details={
+                "onboarding_id": onboarding_id,
+                "task_category": task.category,
+                "task_description": task.description,
+                "previous_completed": task.completed,
+                "requested_completed": new_state,
+            },
+        ):
+            return
+        try:
+            set_task_completed(onboarding_id, task, new_state)
+        except (OSError, ValueError, TypeError) as exc:
+            print(f"Unable to save task progress ({type(exc).__name__}).")
+            print("The authorization was audited, but the change was not saved.")
+            return
+        task.completed = new_state
+        print(f"Task marked {label}.")
+        try:
+            path = create_checklist(
+                employee, tasks, shore_email=record.get("shore_email", "")
+            )
+        except (OSError, ValueError) as exc:
+            print(f"WARNING: Text checklist could not be updated ({type(exc).__name__}).")
+            print("Progress was saved. Reopen this menu to retry later.")
+        else:
+            print(f"Updated checklist: {path}")
+
+
 def run_console() -> None:
     """Run the Shore IT Onboarding console."""
     while True:
@@ -774,14 +898,16 @@ def run_console() -> None:
         elif selection == "9":
             export_audit_summary_report()
         elif selection == "10":
+            manage_onboarding_checklist()
+        elif selection == "11":
             print()
             print("Exiting Shore IT Onboarding.")
             print()
             break
         else:
             print()
-            print("Invalid selection. Please choose 1 through 10.")
+            print("Invalid selection. Please choose 1 through 11.")
 
-        if selection in {"1", "2", "3", "4", "5", "6", "7", "8", "9"}:
+        if selection in {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}:
             print()
             input("Press Enter to return to the main menu...")
