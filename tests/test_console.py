@@ -1,4 +1,3 @@
-
 """Tests for Google Workspace integration in the onboarding console."""
 
 from datetime import date
@@ -8,12 +7,24 @@ import pytest
 from googleapiclient.errors import HttpError
 from httplib2 import Response
 
+from src import audit
 from src.console import (
     confirm_unverified_email,
     create_new_onboarding,
     resolve_employee_email,
 )
 from src.employee import Employee
+
+
+@pytest.fixture(autouse=True)
+def isolate_console_audit_storage(tmp_path, monkeypatch):
+    """Prevent console tests from writing audit events to real data."""
+    monkeypatch.setattr(audit, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(
+        audit,
+        "AUDIT_FILE",
+        tmp_path / "onboarding_audit.jsonl",
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -410,7 +421,7 @@ def test_approval_still_requires_final_confirmation(capsys):
         ),
         patch(
             "builtins.input",
-            side_effect=["Y", "N"],
+            side_effect=["Y", "Jane Administrator", "HR-approved urgent onboarding", "N"],
         ) as user_input,
         patch("src.console.create_checklist") as checklist,
         patch("src.console.save_onboarding_record") as history,
@@ -419,7 +430,7 @@ def test_approval_still_requires_final_confirmation(capsys):
 
     output = capsys.readouterr().out
 
-    assert user_input.call_count == 2
+    assert user_input.call_count == 4
     assert "Onboarding cancelled." in output
     checklist.assert_not_called()
     history.assert_not_called()
@@ -445,7 +456,7 @@ def test_explicit_approval_allows_unverified_onboarding(capsys):
         ),
         patch(
             "builtins.input",
-            side_effect=["Y", "Y"],
+            side_effect=["Y", "Jane Administrator", "HR-approved urgent onboarding", "Y"],
         ) as user_input,
         patch(
             "src.console.create_checklist",
@@ -458,7 +469,7 @@ def test_explicit_approval_allows_unverified_onboarding(capsys):
     ):
         create_new_onboarding()
 
-    assert user_input.call_count == 2
+    assert user_input.call_count == 4
     checklist.assert_called_once()
     history.assert_called_once_with(
         employee,

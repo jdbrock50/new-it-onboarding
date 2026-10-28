@@ -4,6 +4,7 @@ from datetime import date
 
 from googleapiclient.errors import HttpError
 
+from src.audit import AuditWriteError, record_audit_event
 from src.checklist import create_checklist
 from src.config import GOOGLE_DOMAIN
 from src.employee import Employee
@@ -164,16 +165,17 @@ def collect_employee_information() -> Employee:
     )
 
 
-def _resolve_employee_email_with_verification(
+def _resolve_employee_email_with_details(
     employee: Employee,
-) -> tuple[str, str, bool]:
-    """Resolve an email and report whether both directory checks succeeded."""
+) -> tuple[str, str, bool, dict[str, str]]:
+    """Resolve an email and return each directory lookup's result."""
     existing_usernames = get_existing_usernames()
 
     print()
     print("Checking Shore Google Workspace directory...")
 
     verification_complete = True
+    lookup_results: dict[str, str] = {}
     for label, lookup in (
         ("Users", get_workspace_usernames),
         ("Groups", get_workspace_group_usernames),
@@ -182,9 +184,11 @@ def _resolve_employee_email_with_verification(
             reserved = lookup()
         except (HttpError, OSError, ValueError) as exc:
             verification_complete = False
+            lookup_results[label.lower()] = "failed"
             print(f"WARNING: Google Workspace {label} lookup failed.")
             print(f"Error type: {type(exc).__name__}")
         else:
+            lookup_results[label.lower()] = "success"
             existing_usernames.update(reserved)
             print(f"{label} directory addresses checked: {len(reserved)}")
 
@@ -203,7 +207,22 @@ def _resolve_employee_email_with_verification(
         existing_usernames=existing_usernames,
     )
 
-    return username, f"{username}@{GOOGLE_DOMAIN}", verification_complete
+    return (
+        username,
+        f"{username}@{GOOGLE_DOMAIN}",
+        verification_complete,
+        lookup_results,
+    )
+
+
+def _resolve_employee_email_with_verification(
+    employee: Employee,
+) -> tuple[str, str, bool]:
+    """Preserve the existing three-value verification interface."""
+    username, email, verified, _results = _resolve_employee_email_with_details(
+        employee
+    )
+    return username, email, verified
 
 
 def resolve_employee_email(employee: Employee) -> tuple[str, str]:
@@ -226,12 +245,48 @@ def confirm_unverified_email(shore_email: str) -> bool:
     return confirmation in {"y", "yes"}
 
 
+def _record_required_audit_event(
+    event_type: str,
+    *,
+    shore_email: str,
+    details: dict[str, object],
+) -> bool:
+    """Record an event, stopping the current workflow on audit failure."""
+    try:
+        record_audit_event(
+            event_type,
+            employee_email=shore_email,
+            details=details,
+        )
+    except AuditWriteError:
+        print()
+        print(f"ERROR: {event_type} audit could not be saved.")
+        print("Onboarding stopped because audit logging is unavailable.")
+        return False
+    return True
+
+
 def create_new_onboarding() -> None:
-    """Create a new employee onboarding."""
+    """Create a new employee onboarding with required audit checkpoints."""
     employee = collect_employee_information()
-    username, shore_email, verified = (
-        _resolve_employee_email_with_verification(employee)
+    username, shore_email, verified, lookup_results = (
+        _resolve_employee_email_with_details(employee)
     )
+
+    if not _record_required_audit_event(
+        "verification_completed",
+        shore_email=shore_email,
+        details={
+            "users_lookup": lookup_results["users"],
+            "groups_lookup": lookup_results["groups"],
+            "verification_complete": verified,
+            "original_username": employee.proposed_username,
+            "resolved_username": username,
+            "username_collision": username != employee.proposed_username,
+        },
+    ):
+        print("No checklist or history was created.")
+        return
 
     base_username = employee.proposed_username
     collision_detected = username != base_username
@@ -259,36 +314,96 @@ def create_new_onboarding() -> None:
     else:
         print("Devices: None")
 
-    if not verified and not confirm_unverified_email(shore_email):
-        print()
-        print("Onboarding cancelled. No records were created.")
-        return
+    administrator_name = None
+    approval_reason = None
+    if not verified:
+        if not confirm_unverified_email(shore_email):
+            if not _record_required_audit_event(
+                "override_declined",
+                shore_email=shore_email,
+                details={"verification_complete": False},
+            ):
+                return
+            if not _record_required_audit_event(
+                "onboarding_cancelled",
+                shore_email=shore_email,
+                details={
+                    "stage": "unverified_email_override",
+                    "verification_complete": False,
+                },
+            ):
+                return
+            print()
+            print("Onboarding cancelled. No records were created.")
+            return
+
+        administrator_name = get_required_input("Approving administrator name: ")
+        approval_reason = get_required_input("Override approval reason: ")
+        if not _record_required_audit_event(
+            "override_approved",
+            shore_email=shore_email,
+            details={
+                "administrator_name": administrator_name,
+                "approval_reason": approval_reason,
+                "verification_complete": False,
+            },
+        ):
+            return
 
     print()
-    confirmation = input(
-        "Create this onboarding? (Y/N): "
-    ).strip().lower()
-
+    confirmation = input("Create this onboarding? (Y/N): ").strip().lower()
     if confirmation not in {"y", "yes"}:
+        if not _record_required_audit_event(
+            "onboarding_cancelled",
+            shore_email=shore_email,
+            details={
+                "stage": "final_confirmation",
+                "verification_complete": verified,
+                "override_approved": not verified,
+            },
+        ):
+            return
         print()
         print("Onboarding cancelled.")
         return
 
-    tasks = generate_onboarding_tasks(
-        employee,
+    # A durable authorization event must exist before creating any records.
+    if not _record_required_audit_event(
+        "onboarding_creation_authorized",
         shore_email=shore_email,
-    )
+        details={
+            "verification_complete": verified,
+            "override_approved": not verified,
+            "administrator_name": administrator_name,
+        },
+    ):
+        return
 
+    tasks = generate_onboarding_tasks(employee, shore_email=shore_email)
     checklist_path = create_checklist(
         employee,
         tasks,
         shore_email=shore_email,
     )
-
     history_path = save_onboarding_record(
         employee,
         shore_email=shore_email,
     )
+
+    # This event follows the side effects: it must never claim success early.
+    if not _record_required_audit_event(
+        "onboarding_created",
+        shore_email=shore_email,
+        details={
+            "verification_complete": verified,
+            "override_approved": not verified,
+            "administrator_name": administrator_name,
+            "checklist_path": str(checklist_path),
+            "history_path": str(history_path),
+        },
+    ):
+        print("WARNING: Checklist/history may already exist; review them manually.")
+        return
 
     print()
     print("Onboarding created successfully.")
