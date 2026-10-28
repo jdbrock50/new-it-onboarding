@@ -164,10 +164,10 @@ def collect_employee_information() -> Employee:
     )
 
 
-def resolve_employee_email(
+def _resolve_employee_email_with_verification(
     employee: Employee,
-) -> tuple[str, str]:
-    """Resolve a username using local and live directory records."""
+) -> tuple[str, str, bool]:
+    """Resolve an email and report whether both directory checks succeeded."""
     existing_usernames = get_existing_usernames()
 
     print()
@@ -203,13 +203,35 @@ def resolve_employee_email(
         existing_usernames=existing_usernames,
     )
 
-    return username, f"{username}@{GOOGLE_DOMAIN}"
+    return username, f"{username}@{GOOGLE_DOMAIN}", verification_complete
+
+
+def resolve_employee_email(employee: Employee) -> tuple[str, str]:
+    """Return a proposed username and email, preserving the public API."""
+    username, email, _verified = _resolve_employee_email_with_verification(employee)
+    return username, email
+
+
+def confirm_unverified_email(shore_email: str) -> bool:
+    """Require explicit approval when directory verification is incomplete."""
+    print()
+    print("WARNING: GOOGLE WORKSPACE VERIFICATION INCOMPLETE")
+    print("-" * 60)
+    print("The proposed Shore email was NOT fully verified.")
+    print(f"Proposed Email: {shore_email}")
+    print("Creating this onboarding could result in a duplicate address.")
+    confirmation = input(
+        "Proceed with an UNVERIFIED email? (Y/N): "
+    ).strip().lower()
+    return confirmation in {"y", "yes"}
 
 
 def create_new_onboarding() -> None:
     """Create a new employee onboarding."""
     employee = collect_employee_information()
-    username, shore_email = resolve_employee_email(employee)
+    username, shore_email, verified = (
+        _resolve_employee_email_with_verification(employee)
+    )
 
     base_username = employee.proposed_username
     collision_detected = username != base_username
@@ -236,6 +258,11 @@ def create_new_onboarding() -> None:
         print(f"Devices: {', '.join(employee.device_needs)}")
     else:
         print("Devices: None")
+
+    if not verified and not confirm_unverified_email(shore_email):
+        print()
+        print("Onboarding cancelled. No records were created.")
+        return
 
     print()
     confirmation = input(
