@@ -1,10 +1,14 @@
 """Console interface for the Shore IT Onboarding application."""
 
-from datetime import date
+from datetime import UTC, date, datetime
+from pathlib import Path
 
 from googleapiclient.errors import HttpError
 
-from src.audit import AuditWriteError, record_audit_event
+from src.audit import AuditWriteError, load_audit_events, record_audit_event
+from src.audit_export import export_audit_events_csv, export_audit_summary_csv
+from src.audit_filters import filter_audit_events
+from src.audit_summary import summarize_audit_events
 from src.checklist import create_checklist
 from src.config import GOOGLE_DOMAIN
 from src.employee import Employee
@@ -59,7 +63,11 @@ def display_menu() -> None:
     print("3. View Upcoming Hires")
     print("4. View Onboarding History")
     print("5. Update Onboarding Status")
-    print("6. Exit")
+    print("6. View Audit Log")
+    print("7. View Audit Summary")
+    print("8. Export Audit Events to CSV")
+    print("9. Export Audit Summary to CSV")
+    print("10. Exit")
     print()
 
 
@@ -467,6 +475,171 @@ def view_onboarding_history() -> None:
     display_records(load_onboarding_history())
 
 
+def view_audit_log() -> None:
+    """Display recent audit events with optional email, type, and date filters."""
+    print()
+    print("AUDIT LOG — 20 MOST RECENT EVENTS")
+    print("=" * 60)
+
+    try:
+        events = load_audit_events()
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"Unable to read audit log ({type(exc).__name__}).")
+        return
+
+    if not events:
+        print("No audit events found.")
+        return
+
+    print()
+    print("Search audit events (leave all fields blank to show all).")
+    email_query = input("Employee email contains (optional): ").strip()
+    type_query = input("Event type (optional): ").strip()
+    start_query = input("Start date (YYYY-MM-DD, optional): ").strip()
+    end_query = input("End date (YYYY-MM-DD, optional): ").strip()
+    try:
+        matching_events = filter_audit_events(
+            events,
+            employee_email=email_query,
+            event_type=type_query,
+            start_date=start_query,
+            end_date=end_query,
+        )
+    except ValueError as exc:
+        print(f"Invalid audit search: {exc}")
+        return
+
+    if not matching_events:
+        print("No matching audit events found.")
+        return
+
+    print(f"Matching events: {len(matching_events)}")
+    print("Showing up to 20 most recent matching events.")
+    for number, event in enumerate(reversed(matching_events[-20:]), start=1):
+        print(f"{number}. {event.get('timestamp', 'Unknown timestamp')}")
+        print(f"   Event: {event.get('event_type', 'Unknown event')}")
+        print(f"   Employee: {event.get('employee_email', 'Unknown email')}")
+        print()
+
+
+
+def view_audit_summary() -> None:
+    """Display read-only summary counts from recorded onboarding audit events."""
+    print()
+    print("AUDIT SUMMARY REPORT")
+    print("=" * 60)
+
+    try:
+        events = load_audit_events()
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"Unable to read audit log ({type(exc).__name__}).")
+        return
+
+    if not events:
+        print("No audit events found.")
+        return
+
+    summary = summarize_audit_events(events)
+    print(f"Total audit events: {summary['total_events']}")
+    print(f"Unique employee emails: {summary['unique_employee_emails']}")
+    print()
+    print("EVENT COUNTS BY TYPE")
+    print("-" * 60)
+    for event_type, count in summary["events_by_type"].items():
+        print(f"{event_type}: {count}")
+
+    outcomes = summary["verification_outcomes"]
+    print()
+    print("GOOGLE WORKSPACE VERIFICATION OUTCOMES")
+    print("-" * 60)
+    print(f"Successful: {outcomes['successful']}")
+    print(f"Incomplete: {outcomes['incomplete']}")
+    print(f"Unknown: {outcomes['unknown']}")
+
+    print()
+    print("ADMINISTRATOR OVERRIDES")
+    print("-" * 60)
+    print(f"Approved: {summary['overrides_approved']}")
+    print(f"Declined: {summary['overrides_declined']}")
+
+    print()
+    print("ONBOARDING OUTCOMES")
+    print("-" * 60)
+    print(f"Created: {summary['onboardings_created']}")
+    print(f"Cancelled: {summary['onboardings_cancelled']}")
+
+
+
+def _audit_report_path(report_type: str) -> Path:
+    """Choose a timestamped report path without replacing an existing file."""
+    folder = Path("reports")
+    stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
+    return folder / f"audit_{report_type}_{stamp}.csv"
+
+
+def export_audit_events_report() -> None:
+    """Export audit events, optionally filtered by email, type, and dates."""
+    print()
+    print("EXPORT AUDIT EVENTS TO CSV")
+    print("=" * 60)
+    try:
+        events = load_audit_events()
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"Unable to read audit log ({type(exc).__name__}).")
+        return
+    if not events:
+        print("No audit events found. No CSV was created.")
+        return
+
+    print("Filter events (leave all fields blank to export all events).")
+    email_query = input("Employee email contains (optional): ").strip()
+    type_query = input("Event type (optional): ").strip()
+    start_query = input("Start date (YYYY-MM-DD, optional): ").strip()
+    end_query = input("End date (YYYY-MM-DD, optional): ").strip()
+    try:
+        matching = filter_audit_events(
+            events,
+            employee_email=email_query,
+            event_type=type_query,
+            start_date=start_query,
+            end_date=end_query,
+        )
+    except ValueError as exc:
+        print(f"Invalid audit search: {exc}")
+        return
+    if not matching:
+        print("No matching audit events found. No CSV was created.")
+        return
+    try:
+        path = export_audit_events_csv(matching, _audit_report_path("events"))
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"Unable to export audit events ({type(exc).__name__}).")
+        return
+    print(f"Exported {len(matching)} audit events to: {path}")
+
+
+def export_audit_summary_report() -> None:
+    """Export aggregated audit statistics to CSV without changing the log."""
+    print()
+    print("EXPORT AUDIT SUMMARY TO CSV")
+    print("=" * 60)
+    try:
+        events = load_audit_events()
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"Unable to read audit log ({type(exc).__name__}).")
+        return
+    if not events:
+        print("No audit events found. No CSV was created.")
+        return
+    try:
+        summary = summarize_audit_events(events)
+        path = export_audit_summary_csv(summary, _audit_report_path("summary"))
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"Unable to export audit summary ({type(exc).__name__}).")
+        return
+    print(f"Exported summary of {len(events)} audit events to: {path}")
+
+
 def select_history_record(
     records: list[dict[str, str]],
 ) -> int | None:
@@ -593,14 +766,22 @@ def run_console() -> None:
         elif selection == "5":
             update_status()
         elif selection == "6":
+            view_audit_log()
+        elif selection == "7":
+            view_audit_summary()
+        elif selection == "8":
+            export_audit_events_report()
+        elif selection == "9":
+            export_audit_summary_report()
+        elif selection == "10":
             print()
             print("Exiting Shore IT Onboarding.")
             print()
             break
         else:
             print()
-            print("Invalid selection. Please choose 1 through 6.")
+            print("Invalid selection. Please choose 1 through 10.")
 
-        if selection in {"1", "2", "3", "4", "5"}:
+        if selection in {"1", "2", "3", "4", "5", "6", "7", "8", "9"}:
             print()
             input("Press Enter to return to the main menu...")
