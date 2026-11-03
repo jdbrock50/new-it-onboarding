@@ -9,7 +9,6 @@ from typing import Any
 
 from src.progress_dashboard import build_progress_dashboard
 
-
 PRIORITY_LEVELS = ("Critical", "High", "Medium", "Low")
 
 
@@ -38,15 +37,21 @@ def build_overdue_alerts(
     upcoming_days: int = 7,
     program: str | None = None,
     location: str | None = None,
+    priority: str | None = None,
 ) -> dict[str, Any]:
-    """Classify incomplete checklists, optionally filtered by program and location.
+    """Build read-only alerts, sorted by urgency, with optional exact filters.
 
-    Filtering happens before checklist evaluation, so errors and summary counts
-    reflect only the selected records. This function does not modify inputs,
-    history, or checklist progress.
+    Program/location filters are applied before checklist evaluation. Priority
+    filtering is applied after classification. Counts reflect visible alerts.
     """
     if upcoming_days < 0:
         raise ValueError("upcoming_days must be nonnegative")
+    selected_priority = (priority or "").strip().casefold()
+    if selected_priority in ("", "all"):
+        selected_priority = ""
+    elif selected_priority not in {level.casefold() for level in PRIORITY_LEVELS}:
+        raise ValueError("priority must be All, Critical, High, Medium, or Low")
+
     reference_date = today if today is not None else date.today()
     selected_records = [
         record for record in records
@@ -90,6 +95,8 @@ def build_overdue_alerts(
         else:
             continue
         alert_priority = _alert_priority(days_until_start)
+        if selected_priority and alert_priority.casefold() != selected_priority:
+            continue
         counts[alert_type] += 1
         priority_counts[alert_priority] += 1
         alerts.append({
@@ -110,8 +117,10 @@ def build_overdue_alerts(
             "percentage": row["percentage"],
         })
 
-    alert_order = {"Overdue": 0, "Due Today": 1, "Upcoming": 2}
-    alerts.sort(key=lambda item: (alert_order[item["alert"]], item["start_date"], item["employee"]))
+    order = {level: index for index, level in enumerate(PRIORITY_LEVELS)}
+    alerts.sort(key=lambda item: (
+        order[item["priority"]], item["start_date"], item["employee"], item["onboarding_id"]
+    ))
     return {
         "as_of": reference_date.isoformat(),
         "upcoming_days": upcoming_days,

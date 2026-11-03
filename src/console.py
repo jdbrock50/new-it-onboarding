@@ -925,12 +925,14 @@ def view_overdue_onboarding_alerts() -> None:
     print("Filter alerts (leave blank to show all).")
     program = input("Filter by program (Enter for all): ").strip()
     location = input("Filter by location (Enter for all): ").strip()
+    priority = input("Filter by priority (All/Critical/High/Medium/Low; Enter for all): ").strip()
     try:
         records = load_onboarding_history()
         report = build_overdue_alerts(
             records,
             program=program or None,
             location=location or None,
+            priority=priority or None,
         )
     except (OSError, ValueError, TypeError) as exc:
         print(f"Unable to build overdue alerts ({type(exc).__name__}).")
@@ -940,6 +942,7 @@ def view_overdue_onboarding_alerts() -> None:
     print(f"Upcoming window: {report['upcoming_days']} days")
     print(f"Program filter: {program or 'All'}")
     print(f"Location filter: {location or 'All'}")
+    print(f"Priority filter: {priority or 'All'}")
     print()
     print("ALERT SUMMARY")
     print("-" * 60)
