@@ -948,6 +948,12 @@ def view_overdue_onboarding_alerts() -> None:
     print(f"Total alerts: {report['total_alerts']}")
     print(f"Records with errors: {len(report['errors'])}")
 
+    print()
+    print("PRIORITY SUMMARY")
+    print("-" * 60)
+    for level in ("Critical", "High", "Medium", "Low"):
+        print(f"{level}: {report['priority_counts'][level]}")
+
     if not records:
         print("No onboarding records found.")
     elif not report["alerts"]:
@@ -958,6 +964,7 @@ def view_overdue_onboarding_alerts() -> None:
         print("-" * 60)
         for number, alert in enumerate(report["alerts"], start=1):
             print(f"{number}. {alert['employee']} — {alert['alert']}")
+            print(f"   Priority: {alert['priority']}")
             print(f"   Start Date: {alert['start_date']}")
             print(f"   Shore Email: {alert['shore_email'] or 'Not assigned'}")
             print(f"   Overall Status: {alert['status']}")
