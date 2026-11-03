@@ -43,7 +43,7 @@ def test_alert_screen_displays_summary_and_remaining_tasks(monkeypatch, capsys):
     assert "Days Overdue: 2" in output
     assert "Tasks Remaining: 18" in output
     assert "2/20 (10%)" in output
-    builder.assert_called_once_with(records, program=None, location=None)
+    builder.assert_called_once_with(records, program=None, location=None, priority=None)
 
 
 def test_empty_history_is_reported(monkeypatch, capsys):

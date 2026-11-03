@@ -27,12 +27,12 @@ def test_alert_console_passes_filters(monkeypatch, capsys, answers, expected_pro
     build = Mock(return_value=report)
     monkeypatch.setattr(console, "load_onboarding_history", lambda: records)
     monkeypatch.setattr(console, "build_overdue_alerts", build)
-    prompts = iter(answers)
+    prompts = iter([*answers, ""])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(prompts))
 
     console.view_overdue_onboarding_alerts()
 
-    build.assert_called_once_with(records, program=expected_program, location=expected_location)
+    build.assert_called_once_with(records, program=expected_program, location=expected_location, priority=None)
     output = capsys.readouterr().out
     assert f"Program filter: {expected_program or 'All'}" in output
     assert f"Location filter: {expected_location or 'All'}" in output

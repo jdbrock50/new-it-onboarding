@@ -42,7 +42,7 @@ def _alert():
 
 def test_priority_summary_and_individual_label(capsys):
     with (
-        patch("builtins.input", side_effect=["", ""]),
+        patch("builtins.input", side_effect=["", "", ""]),
         patch.object(console, "load_onboarding_history", return_value=[{"status": "Pending"}]),
         patch.object(console, "build_overdue_alerts", return_value=_report([_alert()])),
     ):
@@ -59,12 +59,12 @@ def test_priority_summary_and_individual_label(capsys):
 
 def test_filters_are_forwarded_and_priority_summary_remains_visible(capsys):
     with (
-        patch("builtins.input", side_effect=[" Shore Middle ", " Cambridge "]),
+        patch("builtins.input", side_effect=[" Shore Middle ", " Cambridge ", ""]),
         patch.object(console, "load_onboarding_history", return_value=[{"status": "Pending"}]),
         patch.object(console, "build_overdue_alerts", return_value=_report([])) as builder,
     ):
         console.view_overdue_onboarding_alerts()
-    assert builder.call_args.kwargs == {"program": "Shore Middle", "location": "Cambridge"}
+    assert builder.call_args.kwargs == {"program": "Shore Middle", "location": "Cambridge", "priority": None}
     output = capsys.readouterr().out
     assert "Program filter: Shore Middle" in output
     assert "Location filter: Cambridge" in output
@@ -75,7 +75,7 @@ def test_filters_are_forwarded_and_priority_summary_remains_visible(capsys):
 def test_empty_history_still_shows_zero_priorities(capsys):
     counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
     with (
-        patch("builtins.input", side_effect=["", ""]),
+        patch("builtins.input", side_effect=["", "", ""]),
         patch.object(console, "load_onboarding_history", return_value=[]),
         patch.object(console, "build_overdue_alerts", return_value=_report(priority_counts=counts)),
     ):
@@ -88,7 +88,7 @@ def test_empty_history_still_shows_zero_priorities(capsys):
 
 def test_error_review_still_prints(capsys):
     with (
-        patch("builtins.input", side_effect=["", ""]),
+        patch("builtins.input", side_effect=["", "", ""]),
         patch.object(console, "load_onboarding_history", return_value=[{"status": "Pending"}]),
         patch.object(console, "build_overdue_alerts", return_value=_report(errors=[{
             "employee": "Sample Employee", "error": "Invalid date",
