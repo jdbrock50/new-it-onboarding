@@ -10,11 +10,25 @@ from typing import Any
 from src.progress_dashboard import build_progress_dashboard
 
 
+PRIORITY_LEVELS = ("Critical", "High", "Medium", "Low")
+
+
 def _matches_filter(value: str | None, selected: str | None) -> bool:
     """Match an optional exact program or location, ignoring case and spaces."""
     if selected is None or not selected.strip():
         return True
     return (value or "").strip().casefold() == selected.strip().casefold()
+
+
+def _alert_priority(days_until_start: int) -> str:
+    """Determine urgency from the employee start date."""
+    if days_until_start <= -7:
+        return "Critical"
+    if days_until_start < 0:
+        return "High"
+    if days_until_start == 0:
+        return "Medium"
+    return "Low"
 
 
 def build_overdue_alerts(
@@ -43,6 +57,7 @@ def build_overdue_alerts(
     alerts: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
     counts: Counter[str] = Counter()
+    priority_counts: Counter[str] = Counter()
 
     for record, row in zip(selected_records, dashboard["rows"], strict=True):
         if (record.get("status") or "").strip().casefold() == "cancelled":
@@ -74,7 +89,9 @@ def build_overdue_alerts(
             alert_type = "Upcoming"
         else:
             continue
+        alert_priority = _alert_priority(days_until_start)
         counts[alert_type] += 1
+        priority_counts[alert_priority] += 1
         alerts.append({
             "employee": row["employee"],
             "onboarding_id": row["onboarding_id"],
@@ -84,6 +101,7 @@ def build_overdue_alerts(
             "location": record.get("location", ""),
             "start_date": start_date.isoformat(),
             "alert": alert_type,
+            "priority": alert_priority,
             "days_overdue": max(-days_until_start, 0),
             "days_until_start": max(days_until_start, 0),
             "completed": row["completed"],
@@ -92,13 +110,14 @@ def build_overdue_alerts(
             "percentage": row["percentage"],
         })
 
-    priority = {"Overdue": 0, "Due Today": 1, "Upcoming": 2}
-    alerts.sort(key=lambda item: (priority[item["alert"]], item["start_date"], item["employee"]))
+    alert_order = {"Overdue": 0, "Due Today": 1, "Upcoming": 2}
+    alerts.sort(key=lambda item: (alert_order[item["alert"]], item["start_date"], item["employee"]))
     return {
         "as_of": reference_date.isoformat(),
         "upcoming_days": upcoming_days,
         "alerts": alerts,
         "counts": {name: counts[name] for name in ("Overdue", "Due Today", "Upcoming")},
+        "priority_counts": {name: priority_counts[name] for name in PRIORITY_LEVELS},
         "errors": errors,
         "total_alerts": len(alerts),
     }

@@ -22,6 +22,7 @@ def test_alert_console_passes_filters(monkeypatch, capsys, answers, expected_pro
         "as_of": "2026-11-03", "upcoming_days": 7,
         "counts": {"Overdue": 0, "Due Today": 0, "Upcoming": 0},
         "total_alerts": 0, "errors": [], "alerts": [],
+        "priority_counts": {"Critical": 0, "High": 0, "Medium": 0, "Low": 0},
     }
     build = Mock(return_value=report)
     monkeypatch.setattr(console, "load_onboarding_history", lambda: records)
@@ -44,7 +45,8 @@ def test_alert_console_shows_program_and_location(monkeypatch, capsys):
         "as_of": "2026-11-03", "upcoming_days": 7,
         "counts": {"Overdue": 1, "Due Today": 0, "Upcoming": 0},
         "total_alerts": 1, "errors": [],
-        "alerts": [{"employee": "Test Employee", "alert": "Overdue",
+        "priority_counts": {"Critical": 0, "High": 1, "Medium": 0, "Low": 0},
+        "alerts": [{"employee": "Test Employee", "alert": "Overdue", "priority": "High",
                     "start_date": "2026-11-01", "shore_email": "",
                     "status": "Pending", "days_overdue": 2,
                     "remaining": 3, "completed": 1, "total": 4,

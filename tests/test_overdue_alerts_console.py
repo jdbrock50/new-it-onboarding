@@ -12,6 +12,7 @@ def _report(alerts=None, errors=None):
         "as_of": "2026-11-03", "upcoming_days": 7,
         "counts": {"Overdue": 1 if alerts else 0, "Due Today": 0, "Upcoming": 0},
         "total_alerts": len(alerts), "alerts": alerts, "errors": errors,
+        "priority_counts": {"Critical": 0, "High": len(alerts), "Medium": 0, "Low": 0},
     }
 
 
@@ -26,7 +27,7 @@ def test_menu_shows_alerts_and_new_exit(capsys):
 def test_alert_screen_displays_summary_and_remaining_tasks(monkeypatch, capsys):
     records = [{"onboarding_id": "fake-1"}]
     alert = {
-        "employee": "Test Employee", "alert": "Overdue", "start_date": "2026-11-01",
+        "employee": "Test Employee", "alert": "Overdue", "priority": "High", "start_date": "2026-11-01",
         "shore_email": "test@example.invalid", "status": "Pending", "days_overdue": 2,
         "remaining": 18, "completed": 2, "total": 20, "percentage": 10,
     }
