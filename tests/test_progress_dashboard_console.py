@@ -26,7 +26,8 @@ def test_menu_shows_dashboard_and_exit(capsys):
     console.display_menu()
     output = capsys.readouterr().out
     assert "11. View Onboarding Progress Dashboard" in output
-    assert "12. Exit" in output
+    assert "12. View Overdue Onboarding Alerts" in output
+    assert "13. Exit" in output
 
 
 def test_dashboard_displays_rows_and_totals(capsys):
@@ -61,15 +62,15 @@ def test_dashboard_handles_history_read_error(capsys):
 def test_dashboard_option_routes_and_exit_does_not_pause():
     with patch.object(console, "display_header"), patch.object(console, "display_menu"), patch.object(
         console, "view_onboarding_progress_dashboard"
-    ) as dashboard, patch("builtins.input", side_effect=["11", "", "12"]) as prompt:
+    ) as dashboard, patch("builtins.input", side_effect=["11", "", "13"]) as prompt:
         console.run_console()
     dashboard.assert_called_once_with()
     assert prompt.call_count == 3
 
 
-def test_exit_option_twelve():
+def test_exit_option_thirteen():
     with patch.object(console, "display_header"), patch.object(console, "display_menu"), patch(
-        "builtins.input", return_value="12"
+        "builtins.input", return_value="13"
     ) as prompt:
         console.run_console()
     prompt.assert_called_once()

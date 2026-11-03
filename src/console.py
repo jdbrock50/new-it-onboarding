@@ -25,6 +25,7 @@ from src.history import (
     save_onboarding_record,
     update_onboarding_status,
 )
+from src.overdue_alerts import build_overdue_alerts
 from src.onboarding import generate_onboarding_tasks
 from src.progress_dashboard import build_progress_dashboard
 from src.task_progress import (
@@ -75,7 +76,8 @@ def display_menu() -> None:
     print("9. Export Audit Summary to CSV")
     print("10. Manage Onboarding Checklist")
     print("11. View Onboarding Progress Dashboard")
-    print("12. Exit")
+    print("12. View Overdue Onboarding Alerts")
+    print("13. Exit")
     print()
 
 
@@ -914,6 +916,60 @@ def view_onboarding_progress_dashboard() -> None:
         print(f"   {status}: {count}")
 
 
+
+def view_overdue_onboarding_alerts() -> None:
+    """Display read-only alerts for incomplete onboarding checklists."""
+    print()
+    print("OVERDUE ONBOARDING ALERTS")
+    print("=" * 60)
+    try:
+        records = load_onboarding_history()
+        report = build_overdue_alerts(records)
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"Unable to build overdue alerts ({type(exc).__name__}).")
+        return
+
+    print(f"As of: {report['as_of']}")
+    print(f"Upcoming window: {report['upcoming_days']} days")
+    print()
+    print("ALERT SUMMARY")
+    print("-" * 60)
+    for category in ("Overdue", "Due Today", "Upcoming"):
+        print(f"{category}: {report['counts'][category]}")
+    print(f"Total alerts: {report['total_alerts']}")
+    print(f"Records with errors: {len(report['errors'])}")
+
+    if not records:
+        print("No onboarding records found.")
+    elif not report["alerts"]:
+        print("No active onboarding alerts found.")
+    else:
+        print()
+        print("ACTIVE ALERTS")
+        print("-" * 60)
+        for number, alert in enumerate(report["alerts"], start=1):
+            print(f"{number}. {alert['employee']} — {alert['alert']}")
+            print(f"   Start Date: {alert['start_date']}")
+            print(f"   Shore Email: {alert['shore_email'] or 'Not assigned'}")
+            print(f"   Overall Status: {alert['status']}")
+            if alert["alert"] == "Overdue":
+                print(f"   Days Overdue: {alert['days_overdue']}")
+            elif alert["alert"] == "Upcoming":
+                print(f"   Days Until Start: {alert['days_until_start']}")
+            print(f"   Tasks Remaining: {alert['remaining']}")
+            print(
+                f"   Checklist Progress: {alert['completed']}/{alert['total']} "
+                f"({alert['percentage']}%)"
+            )
+
+    if report["errors"]:
+        print()
+        print("RECORDS REQUIRING REVIEW")
+        print("-" * 60)
+        for error in report["errors"]:
+            print(f"{error['employee']}: {error['error']}")
+
+
 def run_console() -> None:
     """Run the Shore IT Onboarding console."""
     while True:
@@ -945,14 +1001,16 @@ def run_console() -> None:
         elif selection == "11":
             view_onboarding_progress_dashboard()
         elif selection == "12":
+            view_overdue_onboarding_alerts()
+        elif selection == "13":
             print()
             print("Exiting Shore IT Onboarding.")
             print()
             break
         else:
             print()
-            print("Invalid selection. Please choose 1 through 12.")
+            print("Invalid selection. Please choose 1 through 13.")
 
-        if selection in {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"}:
+        if selection in {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"}:
             print()
             input("Press Enter to return to the main menu...")

@@ -106,4 +106,5 @@ def test_menu_has_checklist_and_exit(capsys):
     text = capsys.readouterr().out
     assert "10. Manage Onboarding Checklist" in text
     assert "11. View Onboarding Progress Dashboard" in text
-    assert "12. Exit" in text
+    assert "12. View Overdue Onboarding Alerts" in text
+    assert "13. Exit" in text
