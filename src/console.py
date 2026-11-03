@@ -922,15 +922,24 @@ def view_overdue_onboarding_alerts() -> None:
     print()
     print("OVERDUE ONBOARDING ALERTS")
     print("=" * 60)
+    print("Filter alerts (leave blank to show all).")
+    program = input("Filter by program (Enter for all): ").strip()
+    location = input("Filter by location (Enter for all): ").strip()
     try:
         records = load_onboarding_history()
-        report = build_overdue_alerts(records)
+        report = build_overdue_alerts(
+            records,
+            program=program or None,
+            location=location or None,
+        )
     except (OSError, ValueError, TypeError) as exc:
         print(f"Unable to build overdue alerts ({type(exc).__name__}).")
         return
 
     print(f"As of: {report['as_of']}")
     print(f"Upcoming window: {report['upcoming_days']} days")
+    print(f"Program filter: {program or 'All'}")
+    print(f"Location filter: {location or 'All'}")
     print()
     print("ALERT SUMMARY")
     print("-" * 60)
@@ -952,6 +961,8 @@ def view_overdue_onboarding_alerts() -> None:
             print(f"   Start Date: {alert['start_date']}")
             print(f"   Shore Email: {alert['shore_email'] or 'Not assigned'}")
             print(f"   Overall Status: {alert['status']}")
+            print(f"   Program: {alert.get('program') or 'Not specified'}")
+            print(f"   Location: {alert.get('location') or 'Not specified'}")
             if alert["alert"] == "Overdue":
                 print(f"   Days Overdue: {alert['days_overdue']}")
             elif alert["alert"] == "Upcoming":

@@ -10,27 +10,41 @@ from typing import Any
 from src.progress_dashboard import build_progress_dashboard
 
 
+def _matches_filter(value: str | None, selected: str | None) -> bool:
+    """Match an optional exact program or location, ignoring case and spaces."""
+    if selected is None or not selected.strip():
+        return True
+    return (value or "").strip().casefold() == selected.strip().casefold()
+
+
 def build_overdue_alerts(
     records: list[dict[str, str]],
     progress_path: Path | None = None,
     today: date | None = None,
     upcoming_days: int = 7,
+    program: str | None = None,
+    location: str | None = None,
 ) -> dict[str, Any]:
-    """Classify incomplete checklists relative to the employee start date.
+    """Classify incomplete checklists, optionally filtered by program and location.
 
-    This function does not modify history, checklist progress, or input records.
-    Records and dashboard rows are paired by position, preserving distinct
-    onboardings even if they share an email address or an invalid ID.
+    Filtering happens before checklist evaluation, so errors and summary counts
+    reflect only the selected records. This function does not modify inputs,
+    history, or checklist progress.
     """
     if upcoming_days < 0:
         raise ValueError("upcoming_days must be nonnegative")
     reference_date = today if today is not None else date.today()
-    dashboard = build_progress_dashboard(records, progress_path=progress_path)
+    selected_records = [
+        record for record in records
+        if _matches_filter(record.get("program"), program)
+        and _matches_filter(record.get("location"), location)
+    ]
+    dashboard = build_progress_dashboard(selected_records, progress_path=progress_path)
     alerts: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
     counts: Counter[str] = Counter()
 
-    for record, row in zip(records, dashboard["rows"], strict=True):
+    for record, row in zip(selected_records, dashboard["rows"], strict=True):
         if (record.get("status") or "").strip().casefold() == "cancelled":
             continue
         if row["error"] is not None:
@@ -66,6 +80,8 @@ def build_overdue_alerts(
             "onboarding_id": row["onboarding_id"],
             "shore_email": row["shore_email"],
             "status": row["status"],
+            "program": record.get("program", ""),
+            "location": record.get("location", ""),
             "start_date": start_date.isoformat(),
             "alert": alert_type,
             "days_overdue": max(-days_until_start, 0),

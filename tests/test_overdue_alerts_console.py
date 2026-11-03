@@ -34,6 +34,7 @@ def test_alert_screen_displays_summary_and_remaining_tasks(monkeypatch, capsys):
     builder = Mock(return_value=_report([alert]))
     monkeypatch.setattr(console, "load_onboarding_history", loader)
     monkeypatch.setattr(console, "build_overdue_alerts", builder)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")
     console.view_overdue_onboarding_alerts()
     output = capsys.readouterr().out
     assert "Overdue: 1" in output
@@ -41,28 +42,31 @@ def test_alert_screen_displays_summary_and_remaining_tasks(monkeypatch, capsys):
     assert "Days Overdue: 2" in output
     assert "Tasks Remaining: 18" in output
     assert "2/20 (10%)" in output
-    builder.assert_called_once_with(records)
+    builder.assert_called_once_with(records, program=None, location=None)
 
 
 def test_empty_history_is_reported(monkeypatch, capsys):
     monkeypatch.setattr(console, "load_onboarding_history", lambda: [])
-    monkeypatch.setattr(console, "build_overdue_alerts", lambda records: _report())
+    monkeypatch.setattr(console, "build_overdue_alerts", lambda records, **kwargs: _report())
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")
     console.view_overdue_onboarding_alerts()
     assert "No onboarding records found." in capsys.readouterr().out
 
 
 def test_no_active_alerts(monkeypatch, capsys):
     monkeypatch.setattr(console, "load_onboarding_history", lambda: [{"onboarding_id": "fake"}])
-    monkeypatch.setattr(console, "build_overdue_alerts", lambda records: _report())
+    monkeypatch.setattr(console, "build_overdue_alerts", lambda records, **kwargs: _report())
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")
     console.view_overdue_onboarding_alerts()
     assert "No active onboarding alerts found." in capsys.readouterr().out
 
 
 def test_error_records_display(monkeypatch, capsys):
     monkeypatch.setattr(console, "load_onboarding_history", lambda: [{"onboarding_id": "fake"}])
-    monkeypatch.setattr(console, "build_overdue_alerts", lambda records: _report(errors=[{
+    monkeypatch.setattr(console, "build_overdue_alerts", lambda records, **kwargs: _report(errors=[{
         "employee": "Invalid Example", "error": "ValueError: bad date"
     }]))
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")
     console.view_overdue_onboarding_alerts()
     output = capsys.readouterr().out
     assert "Records with errors: 1" in output
@@ -73,6 +77,7 @@ def test_history_read_failure_is_handled(monkeypatch, capsys):
     def fail():
         raise OSError("test failure")
     monkeypatch.setattr(console, "load_onboarding_history", fail)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "")
     console.view_overdue_onboarding_alerts()
     assert "Unable to build overdue alerts (OSError)." in capsys.readouterr().out
 
