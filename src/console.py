@@ -1,5 +1,6 @@
 """Console interface for the Shore IT Onboarding application."""
 
+import json
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from src.google_workspace import (
     get_workspace_group_usernames,
     get_workspace_usernames,
 )
+from src.group_recommendations import recommend_groups
 from src.history import (
     VALID_STATUSES,
     get_existing_usernames,
@@ -25,8 +27,8 @@ from src.history import (
     save_onboarding_record,
     update_onboarding_status,
 )
-from src.overdue_alerts import build_overdue_alerts
 from src.onboarding import generate_onboarding_tasks
+from src.overdue_alerts import build_overdue_alerts
 from src.progress_dashboard import build_progress_dashboard
 from src.task_progress import (
     apply_task_progress,
@@ -162,7 +164,16 @@ def collect_employee_information() -> Employee:
     middle_name = input("Middle name (optional): ").strip()
     last_name = get_required_input("Last name: ")
     job_title = get_required_input("Position: ")
-    program = get_required_input("Program/Department: ")
+    department = get_required_input("Department: ")
+    program = get_required_input("Primary program (enter None if not applicable): ")
+    additional_programs_text = input(
+        "Additional programs (comma-separated, optional): "
+    ).strip()
+    additional_programs = [
+        item.strip()
+        for item in additional_programs_text.split(",")
+        if item.strip()
+    ]
     location = get_required_input("Location: ")
     supervisor = get_required_input("Supervisor: ")
     personal_email = get_required_input("Personal email: ")
@@ -175,6 +186,8 @@ def collect_employee_information() -> Employee:
         last_name=last_name,
         job_title=job_title,
         program=program,
+        department=department,
+        additional_programs=additional_programs,
         location=location,
         supervisor=supervisor,
         start_date=start_date,
@@ -284,6 +297,41 @@ def _record_required_audit_event(
     return True
 
 
+def display_group_recommendations(employee: Employee) -> None:
+    """Display read-only group recommendations before onboarding approval."""
+    print()
+    print("GOOGLE WORKSPACE GROUP RECOMMENDATIONS (READ-ONLY)")
+    print("-" * 60)
+    try:
+        result = recommend_groups(employee)
+    except (ValueError, TypeError, KeyError) as exc:
+        print(f"Unable to calculate group recommendations ({type(exc).__name__}).")
+        print("Review group membership manually before granting access.")
+        return
+
+    if not result.recommendations:
+        print("No groups recommended. Review membership manually.")
+
+    for group in result.recommendations:
+        policy = group.policy.value.replace("_", " ").upper()
+        label = "INHERITED" if group.inherited else policy
+        print(f"- {group.name} <{group.email}>")
+        print(f"  Policy: {label}")
+        print(f"  Reason: {group.reason}")
+        if group.parent_emails:
+            print(f"  Parent groups: {', '.join(group.parent_emails)}")
+
+    if result.review_notes:
+        print()
+        print("MANUAL REVIEW NOTES")
+        for note in result.review_notes:
+            print(f"- {note}")
+
+    print()
+    print("Recommendations are advisory only. No group membership is changed.")
+    print("IT must verify and approve access before assigning groups.")
+
+
 def create_new_onboarding() -> None:
     """Create a new employee onboarding with required audit checkpoints."""
     employee = collect_employee_information()
@@ -314,7 +362,9 @@ def create_new_onboarding() -> None:
     print("-" * 60)
     print(f"Employee: {employee.full_name}")
     print(f"Position: {employee.job_title}")
-    print(f"Program/Department: {employee.program}")
+    print(f"Department: {employee.department}")
+    print(f"Primary Program: {employee.program}")
+    print(f"Additional Programs: {', '.join(employee.additional_programs) or 'None'}")
     print(f"Location: {employee.location}")
     print(f"Supervisor: {employee.supervisor}")
     print(f"Start Date: {employee.start_date}")
@@ -331,6 +381,8 @@ def create_new_onboarding() -> None:
         print(f"Devices: {', '.join(employee.device_needs)}")
     else:
         print("Devices: None")
+
+    display_group_recommendations(employee)
 
     administrator_name = None
     approval_reason = None
@@ -452,6 +504,7 @@ def display_records(records: list[dict[str, str]]) -> None:
         full_name = get_record_full_name(record)
         print(f"{number}. {full_name}")
         print(f"   Position: {record.get('position', '')}")
+        print(f"   Department: {record.get('department', '') or 'Not specified'}")
         print(f"   Program: {record.get('program', '')}")
         print(f"   Location: {record.get('location', '')}")
         print(f"   Start Date: {record.get('start_date', '')}")
@@ -760,12 +813,24 @@ def update_status() -> None:
 def employee_from_history(record: dict[str, str]) -> Employee:
     """Reconstruct an employee from an existing history row."""
     devices = [item.strip() for item in record.get("devices", "").split(",")]
+    try:
+        additional_programs = json.loads(record.get("additional_programs") or "[]")
+    except (ValueError, TypeError):
+        additional_programs = []
+    if not isinstance(additional_programs, list):
+        additional_programs = []
+    additional_programs = [
+        value.strip() for value in additional_programs
+        if isinstance(value, str) and value.strip()
+    ]
     return Employee(
         first_name=record["first_name"],
         middle_name=record.get("middle_name", ""),
         last_name=record["last_name"],
         job_title=record["position"],
         program=record["program"],
+        department=record.get("department", ""),
+        additional_programs=additional_programs,
         location=record["location"],
         supervisor=record["supervisor"],
         start_date=date.fromisoformat(record["start_date"]),
