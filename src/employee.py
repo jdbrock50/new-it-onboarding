@@ -25,6 +25,8 @@ class Employee:
     device_needs: list[str] = field(default_factory=list)
     middle_name: str = ""
     employee_type: str = "Full-Time"
+    department: str = ""
+    additional_programs: list[str] = field(default_factory=list)
 
     @property
     def full_name(self) -> str:
@@ -53,6 +55,23 @@ class Employee:
         """Generate the employee's proposed Shore email address."""
 
         return f"{self.proposed_username}@{GOOGLE_DOMAIN}"
+
+    @property
+    def all_programs(self) -> list[str]:
+        """Return unique programs, preserving their original order."""
+
+        programs = []
+        seen = set()
+
+        for program in [self.program, *self.additional_programs]:
+            cleaned = program.strip()
+            key = cleaned.casefold()
+
+            if cleaned and key not in seen:
+                programs.append(cleaned)
+                seen.add(key)
+
+        return programs
 
     def username_with_middle_initial(self) -> str:
         """Generate an alternate username using the middle initial."""

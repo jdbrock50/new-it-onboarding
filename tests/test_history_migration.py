@@ -5,8 +5,22 @@ from uuid import UUID
 
 from src import history
 
-
-LEGACY_FIELDS = [field for field in history.FIELDNAMES if field != "onboarding_id"]
+LEGACY_FIELDS = [
+    "created_at",
+    "updated_at",
+    "first_name",
+    "middle_name",
+    "last_name",
+    "position",
+    "program",
+    "location",
+    "supervisor",
+    "start_date",
+    "personal_email",
+    "shore_email",
+    "devices",
+    "status",
+]
 
 
 def _legacy_record(name: str, status: str) -> dict[str, str]:
@@ -40,11 +54,13 @@ def test_legacy_migration_preserves_all_fields_and_assigns_unique_ids(
 ):
     path = tmp_path / "onboarding_history.csv"
     monkeypatch.setattr(history, "HISTORY_FILE", path)
+
     original = [
         _legacy_record("Alex", "Pending"),
         _legacy_record("Jordan", "In Progress"),
         _legacy_record("Taylor", "Completed"),
     ]
+
     _write_csv(path, LEGACY_FIELDS, original)
 
     history.ensure_current_schema()
@@ -55,15 +71,22 @@ def test_legacy_migration_preserves_all_fields_and_assigns_unique_ids(
         assert reader.fieldnames == history.FIELDNAMES
 
     assert len(migrated) == len(original)
+
     for before, after in zip(original, migrated, strict=True):
         assert {key: after[key] for key in LEGACY_FIELDS} == before
+
+        assert after["department"] == ""
+        assert after["additional_programs"] == ""
+
         assert str(UUID(after["onboarding_id"])) == after["onboarding_id"]
+
     assert len({row["onboarding_id"] for row in migrated}) == len(migrated)
 
 
 def test_migration_is_idempotent(tmp_path, monkeypatch):
     path = tmp_path / "onboarding_history.csv"
     monkeypatch.setattr(history, "HISTORY_FILE", path)
+
     _write_csv(path, LEGACY_FIELDS, [_legacy_record("Alex", "Pending")])
 
     history.ensure_current_schema()
@@ -79,15 +102,19 @@ def test_migration_is_idempotent(tmp_path, monkeypatch):
 def test_migration_repairs_missing_and_duplicate_ids(tmp_path, monkeypatch):
     path = tmp_path / "onboarding_history.csv"
     monkeypatch.setattr(history, "HISTORY_FILE", path)
+
     existing_id = "11111111-1111-4111-8111-111111111111"
+
     rows = [
         {**_legacy_record("Alex", "Pending"), "onboarding_id": existing_id},
         {**_legacy_record("Jordan", "Pending"), "onboarding_id": existing_id},
         {**_legacy_record("Taylor", "Pending"), "onboarding_id": ""},
     ]
+
     _write_csv(path, history.FIELDNAMES, rows)
 
     history.ensure_current_schema()
+
     migrated = history.load_onboarding_history()
     ids = [row["onboarding_id"] for row in migrated]
 

@@ -1,6 +1,7 @@
 """Store and retrieve employee onboarding history."""
 
 import csv
+import json
 from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -27,6 +28,8 @@ FIELDNAMES = [
     "devices",
     "status",
     "onboarding_id",
+    "department",
+    "additional_programs",
 ]
 
 VALID_STATUSES = {
@@ -70,6 +73,8 @@ def save_onboarding_record(
         "devices": ", ".join(employee.device_needs),
         "status": "Pending",
         "onboarding_id": str(uuid4()),
+        "department": employee.department,
+        "additional_programs": json.dumps(employee.additional_programs, ensure_ascii=False),
     }
 
     if file_exists:
@@ -138,7 +143,7 @@ def write_onboarding_history(
 
 
 def ensure_current_schema() -> None:
-    """Upgrade existing history records with stable onboarding IDs."""
+    """Upgrade history records with stable IDs and current columns."""
 
     if not HISTORY_FILE.exists():
         return
