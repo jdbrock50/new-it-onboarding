@@ -206,14 +206,15 @@ def test_menu_includes_reporting_and_exit(capsys):
     output = capsys.readouterr().out
 
     assert "14. View Group Approval Reporting Dashboard" in output
-    assert "15. Exit" in output
+    assert "15. Export Group Approval Report to CSV" in output
+    assert "16. Exit" in output
 
 
 def test_menu_option_14_opens_reporting_dashboard():
     with (
         patch(
             "builtins.input",
-            side_effect=["14", "", "15"],
+            side_effect=["14", "", "16"],
         ),
         patch("src.console.display_header"),
         patch("src.console.display_menu"),
@@ -226,9 +227,9 @@ def test_menu_option_14_opens_reporting_dashboard():
     dashboard.assert_called_once_with()
 
 
-def test_menu_option_15_exits_without_opening_dashboard():
+def test_menu_option_16_exits_without_opening_dashboard():
     with (
-        patch("builtins.input", return_value="15"),
+        patch("builtins.input", return_value="16"),
         patch("src.console.display_header"),
         patch("src.console.display_menu"),
         patch(

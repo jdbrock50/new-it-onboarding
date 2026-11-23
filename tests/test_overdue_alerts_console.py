@@ -21,7 +21,8 @@ def test_menu_shows_alerts_and_new_exit(capsys):
     output = capsys.readouterr().out
     assert "12. View Overdue Onboarding Alerts" in output
     assert "14. View Group Approval Reporting Dashboard" in output
-    assert "15. Exit" in output
+    assert "15. Export Group Approval Report to CSV" in output
+    assert "16. Exit" in output
     assert "11. View Onboarding Progress Dashboard" in output
 
 
@@ -84,10 +85,10 @@ def test_history_read_failure_is_handled(monkeypatch, capsys):
     assert "Unable to build overdue alerts (OSError)." in capsys.readouterr().out
 
 
-def test_menu_option_12_dispatches_and_15_exits(monkeypatch, capsys):
+def test_menu_option_12_dispatches_and_16_exits(monkeypatch, capsys):
     called = Mock()
     monkeypatch.setattr(console, "view_overdue_onboarding_alerts", called)
-    responses = iter(["12", "", "15"])
+    responses = iter(["12", "", "16"])
     monkeypatch.setattr("builtins.input", lambda prompt="": next(responses))
     console.run_console()
     called.assert_called_once_with()

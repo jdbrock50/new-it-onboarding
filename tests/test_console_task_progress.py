@@ -109,4 +109,5 @@ def test_menu_has_checklist_and_exit(capsys):
     assert "12. View Overdue Onboarding Alerts" in text
     assert "13. Review Google Workspace Group Recommendations" in text
     assert "14. View Group Approval Reporting Dashboard" in text
-    assert "15. Exit" in text
+    assert "15. Export Group Approval Report to CSV" in text
+    assert "16. Exit" in text

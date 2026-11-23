@@ -7,7 +7,9 @@ This module never modifies audit history or Google Workspace memberships.
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
+from pathlib import Path
 
 from src.audit import load_audit_events
 from src.group_approval import (
@@ -193,3 +195,56 @@ def generate_group_approval_report() -> GroupApprovalReport:
         )
 
     return GroupApprovalReport(reviews=tuple(summaries))
+
+
+CSV_REPORT_COLUMNS = (
+    "onboarding_id",
+    "employee_email",
+    "status",
+    "total_groups",
+    "approved",
+    "rejected",
+    "deferred",
+    "not_reviewed",
+    "unresolved",
+    "reopen_count",
+    "was_reopened",
+)
+
+
+def _safe_csv_cell(value: object) -> object:
+    """Prevent spreadsheet software from interpreting text as formulas."""
+    if isinstance(value, str) and value.startswith(("=", "+", "-", "@", "\t", "\r", "\n")):
+        return "'" + value
+    return value
+
+
+def export_group_approval_report_csv(
+    report: GroupApprovalReport, destination: str | Path
+) -> Path:
+    """Export a report to a new CSV file without changing audit records.
+
+    Uses exclusive creation to avoid overwriting an existing file.
+    Parent directories must already exist.
+    """
+    path = Path(destination)
+    with path.open("x", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(CSV_REPORT_COLUMNS)
+        for review in report.reviews:
+            writer.writerow(
+                [
+                    _safe_csv_cell(review.onboarding_id),
+                    _safe_csv_cell(review.employee_email),
+                    _safe_csv_cell(review.status.value),
+                    review.total_groups,
+                    review.approved,
+                    review.rejected,
+                    review.deferred,
+                    review.not_reviewed,
+                    review.unresolved,
+                    review.reopen_count,
+                    review.was_reopened,
+                ]
+            )
+    return path
