@@ -17,8 +17,9 @@ def test_menu_displays_group_review_and_new_exit(capsys):
 
     assert "12. View Overdue Onboarding Alerts" in output
     assert "13. Review Google Workspace Group Recommendations" in output
-    assert "14. Exit" in output
-    assert "13. Exit" not in output
+    assert "14. View Group Approval Reporting Dashboard" in output
+    assert "15. Exit" in output
+    assert "14. Exit" not in output
 
 
 def test_group_review_handles_empty_onboarding_history(

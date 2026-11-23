@@ -25,6 +25,7 @@ from src.group_approval import (
     restore_group_approval_review,
     start_group_approval_review,
 )
+from src.group_approval_reporting import generate_group_approval_report
 from src.group_recommendations import recommend_groups
 from src.history import (
     VALID_STATUSES,
@@ -88,7 +89,8 @@ def display_menu() -> None:
     print("11. View Onboarding Progress Dashboard")
     print("12. View Overdue Onboarding Alerts")
     print("13. Review Google Workspace Group Recommendations")
-    print("14. Exit")
+    print("14. View Group Approval Reporting Dashboard")
+    print("15. Exit")
     print()
 
 
@@ -1443,6 +1445,61 @@ def review_group_recommendations() -> None:
     print("No Google Workspace group memberships were changed.")
 
 
+def view_group_approval_reporting_dashboard() -> None:
+    """Display a read-only summary of locally audited group approval reviews."""
+    print()
+    print("GROUP APPROVAL REPORTING DASHBOARD (READ-ONLY)")
+    print("=" * 60)
+
+    try:
+        report = generate_group_approval_report()
+    except (GroupApprovalError, OSError, ValueError, TypeError) as exc:
+        print(f"Unable to build group approval report ({type(exc).__name__}).")
+        print("Verify the local audit history before retrying.")
+        return
+
+    if not report.reviews:
+        print("No group approval reviews found.")
+        return
+
+    print("REVIEW SUMMARY")
+    print("-" * 60)
+    print(f"Total reviews: {report.total_reviews}")
+    print(f"Completed reviews: {report.completed_reviews}")
+    print(f"In-progress reviews: {report.in_progress_reviews}")
+    print(f"Reviews with unresolved groups: {report.pending_reviews}")
+    print(f"Reviews reopened at least once: {report.reopened_reviews}")
+    print(f"Total reopenings: {report.total_reopenings}")
+    print()
+    print("GROUP DECISION SUMMARY")
+    print("-" * 60)
+    print(f"Total groups: {report.total_groups}")
+    print(f"Approved: {report.approved}")
+    print(f"Rejected: {report.rejected}")
+    print(f"Deferred: {report.deferred}")
+    print(f"Not reviewed: {report.not_reviewed}")
+    print(f"Unresolved: {report.unresolved}")
+    print()
+    print("INDIVIDUAL REVIEW SUMMARIES")
+    print("-" * 60)
+    for number, review in enumerate(report.reviews, start=1):
+        status = review.status.value.replace("_", " ").title()
+        print(f"{number}. {review.employee_email}")
+        print(f"   Onboarding ID: {review.onboarding_id}")
+        print(f"   Status: {status}")
+        print(f"   Groups: {review.total_groups}")
+        print(
+            f"   Decisions: {review.approved} approved, "
+            f"{review.rejected} rejected, {review.deferred} deferred, "
+            f"{review.not_reviewed} not reviewed"
+        )
+        print(f"   Unresolved: {review.unresolved}")
+        print(f"   Times reopened: {review.reopen_count}")
+        print()
+
+    print("Reporting is local and read-only. No group memberships were changed.")
+
+
 def run_console() -> None:
     """Run the Shore IT Onboarding console."""
     while True:
@@ -1478,14 +1535,16 @@ def run_console() -> None:
         elif selection == "13":
             review_group_recommendations()
         elif selection == "14":
+            view_group_approval_reporting_dashboard()
+        elif selection == "15":
             print()
             print("Exiting Shore IT Onboarding.")
             print()
             break
         else:
             print()
-            print("Invalid selection. Please choose 1 through 14.")
+            print("Invalid selection. Please choose 1 through 15.")
 
-        if selection in {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"}:
+        if selection in {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"}:
             print()
             input("Press Enter to return to the main menu...")
