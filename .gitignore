@@ -67,3 +67,13 @@ data/*.sqlite3
 *.temp
 ~*
 data/*.jsonl
+
+# Pytest temporary test directories
+.pytest_*_temp/
+.pytest_temp/
+
+# Development backups
+backups/
+*.backup.py
+# Local Git configuration backups
+.gitignore-old

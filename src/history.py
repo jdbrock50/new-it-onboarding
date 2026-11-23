@@ -1,3 +1,4 @@
+
 """Store and retrieve employee onboarding history."""
 
 import csv
@@ -49,13 +50,22 @@ def current_timestamp() -> str:
 def save_onboarding_record(
     employee: Employee,
     shore_email: str | None = None,
+    onboarding_id: str | None = None,
 ) -> Path:
-    """Save an employee onboarding record to CSV."""
+    """Save an employee onboarding record to CSV.
+
+    Reuse an explicitly supplied onboarding ID, or generate a new UUID
+    when the caller does not provide one.
+    """
 
     DATA_DIR.mkdir(exist_ok=True)
 
     file_exists = HISTORY_FILE.exists()
     timestamp = current_timestamp()
+
+    resolved_onboarding_id = (
+        str(uuid4()) if onboarding_id is None else onboarding_id
+    )
 
     record = {
         "created_at": timestamp,
@@ -72,9 +82,12 @@ def save_onboarding_record(
         "shore_email": shore_email or employee.proposed_shore_email,
         "devices": ", ".join(employee.device_needs),
         "status": "Pending",
-        "onboarding_id": str(uuid4()),
+        "onboarding_id": resolved_onboarding_id,
         "department": employee.department,
-        "additional_programs": json.dumps(employee.additional_programs, ensure_ascii=False),
+        "additional_programs": json.dumps(
+            employee.additional_programs,
+            ensure_ascii=False,
+        ),
     }
 
     if file_exists:

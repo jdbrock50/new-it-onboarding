@@ -17,6 +17,14 @@ from src.google_workspace import (
     get_workspace_group_usernames,
     get_workspace_usernames,
 )
+from src.group_approval import (
+    GroupApprovalError,
+    complete_group_approval_review,
+    record_group_decision,
+    reopen_group_approval_review,
+    restore_group_approval_review,
+    start_group_approval_review,
+)
 from src.group_recommendations import recommend_groups
 from src.history import (
     VALID_STATUSES,
@@ -79,7 +87,8 @@ def display_menu() -> None:
     print("10. Manage Onboarding Checklist")
     print("11. View Onboarding Progress Dashboard")
     print("12. View Overdue Onboarding Alerts")
-    print("13. Exit")
+    print("13. Review Google Workspace Group Recommendations")
+    print("14. Exit")
     print()
 
 
@@ -1056,6 +1065,384 @@ def view_overdue_onboarding_alerts() -> None:
             print(f"{error['employee']}: {error['error']}")
 
 
+def select_group_for_review(review) -> str | None:
+    """Select a group from a restored local review without changing decisions.
+
+    Returns the selected group's email, or None when cancelled or empty.
+    """
+    groups = list(review.groups.values())
+    if not groups:
+        print("No groups are available for decision review.")
+        return None
+
+    print()
+    print("SELECT GROUP FOR LOCAL DECISION REVIEW")
+    print("-" * 60)
+    for number, group in enumerate(groups, start=1):
+        decision = group.decision.value.replace("_", " ").title()
+        print(f"{number}. {group.group_name} <{group.group_email}> — {decision}")
+
+    while True:
+        try:
+            selection = input("Select group number or C to cancel: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("Group selection cancelled. No decisions were recorded.")
+            return None
+
+        if selection.casefold() == "c":
+            print("Group selection cancelled. No decisions were recorded.")
+            return None
+        try:
+            number = int(selection)
+        except ValueError:
+            print("Please enter a valid group number or C to cancel.")
+            continue
+        if not 1 <= number <= len(groups):
+            print("Group number is out of range.")
+            continue
+        return groups[number - 1].group_email
+
+
+def select_group_decision() -> str | None:
+    """Choose a local group decision without recording or applying it."""
+    options = {
+        "1": "approved",
+        "2": "rejected",
+        "3": "deferred",
+    }
+    print()
+    print("SELECT LOCAL GROUP DECISION")
+    print("-" * 60)
+    print("1. Approve")
+    print("2. Reject")
+    print("3. Defer")
+    print("4. Cancel")
+    while True:
+        try:
+            choice = input("Select decision (1-4): ").strip()
+        except (EOFError, KeyboardInterrupt, OSError):
+            print("Decision selection cancelled. No decision was recorded.")
+            return None
+        if choice == "4" or choice.casefold() == "c":
+            print("Decision selection cancelled. No decision was recorded.")
+            return None
+        decision = options.get(choice)
+        if decision is not None:
+            return decision
+        print("Please choose 1, 2, 3, or 4 to cancel.")
+
+
+def review_group_recommendations() -> None:
+    """Check onboarding history before entering the local group review workflow."""
+    print()
+    print("GOOGLE WORKSPACE GROUP RECOMMENDATION REVIEW")
+    print("=" * 60)
+    try:
+        records = load_onboarding_history()
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"Unable to read onboarding history ({type(exc).__name__}).")
+        return
+
+    if not records:
+        print("No onboarding records found.")
+        return
+
+    display_records(records)
+    record_number = select_history_record(records)
+    if record_number is None:
+        print("Group recommendation review cancelled.")
+        return
+
+    selected_record = records[record_number - 1]
+    print()
+    print(f"Selected employee: {get_record_full_name(selected_record)}")
+    try:
+        employee = employee_from_history(selected_record)
+    except (KeyError, ValueError, TypeError) as exc:
+        print(f"Unable to load employee information ({type(exc).__name__}).")
+        print("No approvals were recorded and no group memberships were changed.")
+        return
+
+    display_group_recommendations(employee)
+
+    onboarding_id = selected_record.get("onboarding_id", "").strip()
+    if not onboarding_id:
+        print("This record has no onboarding ID. Existing review lookup skipped.")
+        print("No approvals were recorded and no group memberships were changed.")
+        return
+
+    try:
+        existing_review = restore_group_approval_review(onboarding_id=onboarding_id)
+    except GroupApprovalError as exc:
+        # Only the service's explicit "not found" outcome permits creation.
+        if str(exc) == (
+            "No group approval review exists for onboarding ID: "
+            f"{onboarding_id}"
+        ):
+            existing_review = None
+        else:
+            print(f"Unable to restore group approval review ({type(exc).__name__}).")
+            print("No approvals were recorded and no group memberships were changed.")
+            return
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"Unable to restore group approval review ({type(exc).__name__}).")
+        print("No approvals were recorded and no group memberships were changed.")
+        return
+
+    if existing_review is None:
+        print("No existing group approval review found for this onboarding.")
+        print("Start a new local group approval review (confirmation required).")
+        try:
+            confirmation = input("Confirm starting a new local group approval review? [y/N]: ").strip().lower()
+        except (EOFError, OSError):
+            confirmation = ""
+        if confirmation != "y":
+            print("New local group approval review cancelled. No review was created.")
+        else:
+            try:
+                administrator_name = input("Administrator name (required): ").strip()
+            except (EOFError, OSError):
+                administrator_name = ""
+            if not administrator_name:
+                print("Administrator name is required. No review was created.")
+                return
+
+            employee_email = selected_record.get("shore_email", "").strip()
+            if not employee_email:
+                print("Shore email is required. No review was created.")
+                return
+
+            try:
+                recommendations = recommend_groups(employee)
+                review = start_group_approval_review(
+                    onboarding_id=onboarding_id,
+                    employee_email=employee_email,
+                    recommendations=recommendations,
+                    administrator_name=administrator_name,
+                )
+            except (GroupApprovalError, AuditWriteError, OSError, ValueError, TypeError, KeyError) as exc:
+                print(f"Unable to start group approval review ({type(exc).__name__}).")
+                print("No group memberships were changed. Check the audit log before retrying.")
+                return
+
+            print("Local group approval review created successfully.")
+            print(f"Review Status: {review.status.value.replace('_', ' ').title()}")
+            print(f"Groups Awaiting Decisions: {len(review.unresolved_groups)}")
+            print("No group memberships were changed.")
+            return
+    else:
+        # A restored review must belong to the selected onboarding record.
+        review_onboarding_id = getattr(existing_review, "onboarding_id", None)
+        if (
+            not isinstance(review_onboarding_id, str)
+            or review_onboarding_id.strip() != onboarding_id
+        ):
+            print("Onboarding ID mismatch: existing review does not match the selected record.")
+            print("Group decisions are hidden. Verify onboarding and audit records.")
+            print("No approvals were recorded and no group memberships were changed.")
+            return
+
+        # Never disclose decisions from a review linked to another employee.
+        # Older review objects may lack an email; preserve legacy display behavior.
+        review_email = getattr(existing_review, "employee_email", None)
+        selected_email = selected_record.get("shore_email", "")
+        if review_email is not None and (
+            not isinstance(review_email, str)
+            or not isinstance(selected_email, str)
+            or not review_email.strip()
+            or not selected_email.strip()
+            or review_email.strip().casefold() != selected_email.strip().casefold()
+        ):
+            print("Employee identity mismatch: existing review belongs to a different employee.")
+            print("Group decisions are hidden. Verify onboarding and audit records.")
+            print("No approvals were recorded and no group memberships were changed.")
+            return
+
+        print("Existing local group approval review found for this onboarding.")
+        status = existing_review.status.value.replace("_", " ").title()
+        print(f"Review Status: {status}")
+        print("GROUP DECISIONS")
+        print("-" * 60)
+        for group in existing_review.groups.values():
+            decision = group.decision.value.replace("_", " ").title()
+            print(f"- {group.group_name} <{group.group_email}>")
+            print(f"  Decision: {decision}")
+        print(f"Outstanding Decisions: {len(existing_review.unresolved_groups)}")
+
+        # Explicit opt-in: selection is local and does not record a decision.
+        if existing_review.groups:
+            try:
+                choice = input("Select a group to review a decision? [y/N]: ").strip().casefold()
+            except (EOFError, KeyboardInterrupt, OSError):
+                choice = ""
+            if choice in {"y", "yes"}:
+                selected_group_email = select_group_for_review(existing_review)
+                if selected_group_email is not None:
+                    print(f"Selected group: {selected_group_email}")
+                    selected_decision = select_group_decision()
+                    if selected_decision is not None:
+                        print("LOCAL GROUP DECISION PREVIEW (NOT SAVED)")
+                        print(f"Group: {selected_group_email}")
+                        print(f"Proposed Decision: {selected_decision.title()}")
+                        print("No decision was saved during preview.")
+                        if existing_review.status.value == "completed":
+                            print("Completed reviews must be reopened before decisions can change.")
+                        else:
+                            try:
+                                confirmation = input(
+                                    "Save this LOCAL decision to the audit log? [y/N]: "
+                                ).strip().casefold()
+                            except (EOFError, KeyboardInterrupt, OSError):
+                                confirmation = ""
+                            if confirmation not in {"y", "yes"}:
+                                print("Decision save cancelled. No decision was recorded.")
+                            else:
+                                try:
+                                    administrator_name = input(
+                                        "Administrator name (required): "
+                                    ).strip()
+                                except (EOFError, KeyboardInterrupt, OSError):
+                                    administrator_name = ""
+                                if not administrator_name:
+                                    print("Administrator name is required. No decision was saved.")
+                                else:
+                                    group = existing_review.groups.get(selected_group_email)
+                                    if group is None:
+                                        print("Selected group is unavailable. No decision was saved.")
+                                    else:
+                                        previous_decision = group.decision.value
+                                        change_reason = ""
+                                        if previous_decision != "not_reviewed":
+                                            try:
+                                                change_reason = input(
+                                                    "Reason for changing the existing decision (required): "
+                                                ).strip()
+                                            except (EOFError, KeyboardInterrupt, OSError):
+                                                change_reason = ""
+                                        if previous_decision != "not_reviewed" and not change_reason:
+                                            print("A change reason is required. No decision was saved.")
+                                        else:
+                                            try:
+                                                record_group_decision(
+                                                    existing_review,
+                                                    group_email=selected_group_email,
+                                                    decision=selected_decision,
+                                                    administrator_name=administrator_name,
+                                                    change_reason=change_reason,
+                                                )
+                                            except (GroupApprovalError, AuditWriteError, OSError, ValueError, TypeError) as exc:
+                                                print(
+                                                    "Unable to record local group decision "
+                                                    f"({type(exc).__name__})."
+                                                )
+                                                print("Check the audit log before retrying.")
+                                            else:
+                                                print("Local group decision recorded successfully in the audit log.")
+                                                print(f"Saved Decision: {selected_decision.title()}")
+                    else:
+                        print("Decision selection cancelled. No decision was saved.")
+        # Reopening is a separate, explicit audit-backed operation.
+        # Decisions remain unchanged until an administrator saves a new one.
+        if existing_review.status.value == "completed":
+            print()
+            try:
+                reopen_choice = input(
+                    "Reopen this completed LOCAL group approval review? [y/N]: "
+                ).strip().casefold()
+            except (EOFError, KeyboardInterrupt, OSError, StopIteration):
+                reopen_choice = ""
+            if reopen_choice in {"y", "yes"}:
+                try:
+                    reopening_admin = input(
+                        "Administrator name for reopening (required): "
+                    ).strip()
+                except (EOFError, KeyboardInterrupt, OSError, StopIteration):
+                    reopening_admin = ""
+                if not reopening_admin:
+                    print("Administrator name is required. Review was not reopened.")
+                else:
+                    try:
+                        reopen_reason = input(
+                            "Reason for reopening (required): "
+                        ).strip()
+                    except (EOFError, KeyboardInterrupt, OSError, StopIteration):
+                        reopen_reason = ""
+                    if not reopen_reason:
+                        print("A reopening reason is required. Review was not reopened.")
+                    else:
+                        try:
+                            reopen_group_approval_review(
+                                existing_review,
+                                administrator_name=reopening_admin,
+                                reopen_reason=reopen_reason,
+                            )
+                        except (
+                            GroupApprovalError,
+                            AuditWriteError,
+                            OSError,
+                            ValueError,
+                            TypeError,
+                        ) as exc:
+                            print(
+                                "Unable to reopen local group approval review "
+                                f"({type(exc).__name__})."
+                            )
+                            print("Check the audit log before retrying.")
+                        else:
+                            print("Local group approval review reopened successfully.")
+                            print("Review Status: In Progress")
+            else:
+                print("Review reopening cancelled. Review remains completed.")
+        # Completion is a separate, explicit local audit-backed operation.
+        # Re-evaluate eligibility after any decision recorded above.
+        if (
+            getattr(existing_review, "can_complete", False)
+            and existing_review.status.value == "in_progress"
+            and not ("reopen_choice" in locals() and reopen_choice in {"y", "yes"})
+        ):
+            print()
+            print("All groups have final decisions (Approved or Rejected).")
+            try:
+                complete_choice = input(
+                    "Complete this LOCAL group approval review? [y/N]: "
+                ).strip().casefold()
+            except (EOFError, KeyboardInterrupt, OSError, StopIteration):
+                complete_choice = ""
+            if complete_choice in {"y", "yes"}:
+                try:
+                    completion_admin = input(
+                        "Administrator name for completion (required): "
+                    ).strip()
+                except (EOFError, KeyboardInterrupt, OSError, StopIteration):
+                    completion_admin = ""
+                if not completion_admin:
+                    print("Administrator name is required. Review was not completed.")
+                else:
+                    try:
+                        complete_group_approval_review(
+                            existing_review,
+                            administrator_name=completion_admin,
+                        )
+                    except (
+                        GroupApprovalError,
+                        AuditWriteError,
+                        OSError,
+                        ValueError,
+                        TypeError,
+                    ) as exc:
+                        print(
+                            "Unable to complete local group approval review "
+                            f"({type(exc).__name__})."
+                        )
+                        print("Check the audit log before retrying.")
+                    else:
+                        print("Local group approval review completed successfully.")
+                        print("Review Status: Completed")
+            else:
+                print("Review completion cancelled. Review remains in progress.")
+    print("No Google Workspace group memberships were changed.")
+
+
 def run_console() -> None:
     """Run the Shore IT Onboarding console."""
     while True:
@@ -1089,14 +1476,16 @@ def run_console() -> None:
         elif selection == "12":
             view_overdue_onboarding_alerts()
         elif selection == "13":
+            review_group_recommendations()
+        elif selection == "14":
             print()
             print("Exiting Shore IT Onboarding.")
             print()
             break
         else:
             print()
-            print("Invalid selection. Please choose 1 through 13.")
+            print("Invalid selection. Please choose 1 through 14.")
 
-        if selection in {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"}:
+        if selection in {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"}:
             print()
             input("Press Enter to return to the main menu...")
