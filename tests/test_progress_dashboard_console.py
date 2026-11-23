@@ -29,7 +29,8 @@ def test_menu_shows_dashboard_and_exit(capsys):
     assert "12. View Overdue Onboarding Alerts" in output
     assert "13. Review Google Workspace Group Recommendations" in output
     assert "14. View Group Approval Reporting Dashboard" in output
-    assert "15. Exit" in output
+    assert "15. Export Group Approval Report to CSV" in output
+    assert "16. Exit" in output
 
 
 def test_dashboard_displays_rows_and_totals(capsys):
@@ -64,15 +65,15 @@ def test_dashboard_handles_history_read_error(capsys):
 def test_dashboard_option_routes_and_exit_does_not_pause():
     with patch.object(console, "display_header"), patch.object(console, "display_menu"), patch.object(
         console, "view_onboarding_progress_dashboard"
-    ) as dashboard, patch("builtins.input", side_effect=["11", "", "15"]) as prompt:
+    ) as dashboard, patch("builtins.input", side_effect=["11", "", "16"]) as prompt:
         console.run_console()
     dashboard.assert_called_once_with()
     assert prompt.call_count == 3
 
 
-def test_exit_option_fifteen():
+def test_exit_option_sixteen():
     with patch.object(console, "display_header"), patch.object(console, "display_menu"), patch(
-        "builtins.input", return_value="15"
+        "builtins.input", return_value="16"
     ) as prompt:
         console.run_console()
     prompt.assert_called_once()

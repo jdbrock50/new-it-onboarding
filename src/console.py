@@ -25,7 +25,10 @@ from src.group_approval import (
     restore_group_approval_review,
     start_group_approval_review,
 )
-from src.group_approval_reporting import generate_group_approval_report
+from src.group_approval_reporting import (
+    export_group_approval_report_csv,
+    generate_group_approval_report,
+)
 from src.group_recommendations import recommend_groups
 from src.history import (
     VALID_STATUSES,
@@ -90,7 +93,8 @@ def display_menu() -> None:
     print("12. View Overdue Onboarding Alerts")
     print("13. Review Google Workspace Group Recommendations")
     print("14. View Group Approval Reporting Dashboard")
-    print("15. Exit")
+    print("15. Export Group Approval Report to CSV")
+    print("16. Exit")
     print()
 
 
@@ -1500,6 +1504,36 @@ def view_group_approval_reporting_dashboard() -> None:
     print("Reporting is local and read-only. No group memberships were changed.")
 
 
+
+def export_group_approval_reporting_csv() -> None:
+    """Export locally audited group reviews without changing audit history."""
+    print()
+    print("EXPORT GROUP APPROVAL REPORT TO CSV (READ-ONLY)")
+    print("=" * 60)
+    try:
+        report = generate_group_approval_report()
+    except (GroupApprovalError, OSError, ValueError, TypeError) as exc:
+        print(f"Unable to build group approval report ({type(exc).__name__}).")
+        print("Verify the local audit history before retrying.")
+        return
+
+    if not report.reviews:
+        print("No group approval reviews found. No CSV was created.")
+        return
+
+    try:
+        Path("reports").mkdir(parents=True, exist_ok=True)
+        path = export_group_approval_report_csv(
+            report, _audit_report_path("group_approval")
+        )
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"Unable to export group approval report ({type(exc).__name__}).")
+        return
+
+    print(f"Exported {report.total_reviews} group approval reviews to: {path}")
+    print("Reporting is local and read-only. No group memberships were changed.")
+
+
 def run_console() -> None:
     """Run the Shore IT Onboarding console."""
     while True:
@@ -1537,14 +1571,16 @@ def run_console() -> None:
         elif selection == "14":
             view_group_approval_reporting_dashboard()
         elif selection == "15":
+            export_group_approval_reporting_csv()
+        elif selection == "16":
             print()
             print("Exiting Shore IT Onboarding.")
             print()
             break
         else:
             print()
-            print("Invalid selection. Please choose 1 through 15.")
+            print("Invalid selection. Please choose 1 through 16.")
 
-        if selection in {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"}:
+        if selection in {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"}:
             print()
             input("Press Enter to return to the main menu...")
